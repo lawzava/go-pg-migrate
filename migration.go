@@ -6,6 +6,7 @@ import (
 	"github.com/go-pg/pg/v10"
 )
 
+// Migration defines a single version of a migration to run.
 type Migration struct {
 	Name   string
 	Number uint
