@@ -1,4 +1,8 @@
 ![golangci](https://github.com/lawzava/go-pg-migrate/workflows/golangci/badge.svg?branch=main)
+[![Version](https://img.shields.io/badge/version-v1.0.2-green.svg)](https://github.com/lawzava/go-pg-migrate/releases)
+[![GoDoc](https://godoc.org/github.com/lawzava/go-pg-migrate?status.svg)](http://godoc.org/github.com/lawzava/go-pg-migrate)
+[![Go Report Card](https://goreportcard.com/badge/github.com/lawzava/go-pg-migrate)](https://goreportcard.com/report/github.com/lawzava/go-pg-migrate)
+
 
 # go-pg-migrate
 
