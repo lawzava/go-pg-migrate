@@ -5,7 +5,7 @@ import (
 	"log"
 
 	"github.com/go-pg/pg/v10"
-	migrate "github.com/lawzava/go-pg-migrate/v1"
+	migrate "github.com/lawzava/go-pg-migrate"
 )
 
 func main() {
