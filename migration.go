@@ -1,6 +1,8 @@
 package migrate
 
 import (
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/go-pg/pg/v10"
@@ -23,6 +25,33 @@ type migration struct {
 
 	Forwards  func(tx *pg.Tx) error `pg:"-"`
 	Backwards func(tx *pg.Tx) error `pg:"-"`
+}
+
+var (
+	errDuplicateMigrationVersion = errors.New("duplicate migration version is not allowed")
+	errMigrationIsMissing        = errors.New("migration is missing")
+)
+
+func validateMigrations(m []*Migration) error {
+	for i := range m {
+		for j := range m {
+			if i != j && m[i].Number == m[j].Number {
+				return fmt.Errorf("%s (%d) and %s (%d) have duplicate numbers: %w",
+					m[i].Name, m[i].Number,
+					m[j].Name, m[j].Number,
+					errDuplicateMigrationVersion)
+			}
+		}
+
+		if m[i].Forwards == nil && m[i].Backwards == nil {
+			return fmt.Errorf("%s (%d) at least one migration specification is required: %w",
+				m[i].Name, m[i].Number,
+				errMigrationIsMissing,
+			)
+		}
+	}
+
+	return nil
 }
 
 func mapMigrations(m []*Migration) []*migration {

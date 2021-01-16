@@ -16,8 +16,8 @@ type Options struct {
 	// VersionNumberToApply defines target version for migration actions.
 	VersionNumberToApply uint
 
-	// PrintVersionAndExit controls whether the migration should do an early exit after printing out current version.
-	PrintVersionAndExit bool
+	// PrintInfoAndExit controls whether the migration should do an early exit after printing out current version info.
+	PrintInfoAndExit bool
 
 	// ForceVersionWithoutMigrations allows to force specific migration version without actually applying the migrations.
 	ForceVersionWithoutMigrations bool
@@ -34,24 +34,32 @@ type migrationTask struct {
 }
 
 // Migrate describes migration tasks.
-type Migrate struct {
+type Migrate interface {
+	Migrate() error
+}
+
+type migrate struct {
 	task *migrationTask
 }
 
 // Migrate executes actual migrations based on the specified options.
-func (m Migrate) Migrate() error {
+func (m migrate) Migrate() error {
 	return m.task.migrate()
 }
 
 // New creates new migration instance.
-func New(db *pg.DB, migrations []*Migration, opt Options) Migrate {
-	return Migrate{
+func New(db *pg.DB, migrations []*Migration, opt Options) (Migrate, error) {
+	if err := validateMigrations(migrations); err != nil {
+		return nil, err
+	}
+
+	return migrate{
 		task: &migrationTask{
 			migrations: mapMigrations(migrations),
 			repo:       newRepo(db),
 			opt:        opt,
 		},
-	}
+	}, nil
 }
 
 // migrate applies actual migrations based on the specified options.
@@ -97,7 +105,7 @@ func (m migrationTask) migrate() error {
 		return fmt.Errorf("failed to get the number of the latest migration: %w", err)
 	}
 
-	if m.opt.PrintVersionAndExit {
+	if m.opt.PrintInfoAndExit {
 		log.Info().Msgf("currently applied version: %d", lastAppliedMigrationNumber)
 
 		return nil
