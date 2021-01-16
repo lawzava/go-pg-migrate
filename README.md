@@ -1,3 +1,5 @@
+![golangci](https://github.com/lawzava/go-pg-migrate/workflows/golangci/badge.svg?branch=main)
+
 # go-pg-migrate
 
 CLI-friendly package for [go-pg](https://github.com/go-pg/pg) migrations management.
