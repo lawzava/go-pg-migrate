@@ -4,6 +4,7 @@ go 1.15
 
 require (
 	github.com/fergusstrange/embedded-postgres v1.2.0
+	github.com/frankban/quicktest v1.11.3 // indirect
 	github.com/go-pg/pg/v10 v10.7.3
 	github.com/golang/snappy v0.0.2 // indirect
 	github.com/lib/pq v1.9.0 // indirect
