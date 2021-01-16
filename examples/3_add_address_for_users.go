@@ -2,7 +2,8 @@ package main
 
 import (
 	"fmt"
-	"migrate"
+
+	migrate "github.com/lawzava/go-pg-migrate/v1"
 
 	"github.com/go-pg/pg/v10"
 )
