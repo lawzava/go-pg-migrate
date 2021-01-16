@@ -11,29 +11,51 @@ import (
 
 var errNoMigrationVersion = errors.New("migration version not found")
 
+// Options define applied migrations options and behavior.
 type Options struct {
-	VersionNumberToApply          uint
-	PrintVersionAndExit           bool
+	// VersionNumberToApply defines target version for migration actions.
+	VersionNumberToApply uint
+
+	// PrintVersionAndExit controls whether the migration should do an early exit after printing out current version.
+	PrintVersionAndExit bool
+
+	// ForceVersionWithoutMigrations allows to force specific migration version without actually applying the migrations.
 	ForceVersionWithoutMigrations bool
-	RefreshSchema                 bool
+
+	// RefreshSchema drops and recreates public schema.
+	RefreshSchema bool
 }
 
-type Migrate struct {
+type migrationTask struct {
 	migrations []*migration
 	repo       *repository
 
 	opt Options
 }
 
-func New(db *pg.DB, migrations []*Migration, opt Options) *Migrate {
-	return &Migrate{
-		migrations: mapMigrations(migrations),
-		repo:       newRepo(db),
-		opt:        opt,
+// Migrate describes migration tasks.
+type Migrate struct {
+	task *migrationTask
+}
+
+// Migrate executes actual migrations based on the specified options.
+func (m Migrate) Migrate() error {
+	return m.task.migrate()
+}
+
+// New creates new migration instance.
+func New(db *pg.DB, migrations []*Migration, opt Options) Migrate {
+	return Migrate{
+		task: &migrationTask{
+			migrations: mapMigrations(migrations),
+			repo:       newRepo(db),
+			opt:        opt,
+		},
 	}
 }
 
-func (m Migrate) Migrate() error {
+// migrate applies actual migrations based on the specified options.
+func (m migrationTask) migrate() error {
 	if m.opt.RefreshSchema {
 		if err := m.refreshDatabase(); err != nil {
 			return fmt.Errorf("refreshing database: %w", err)
@@ -88,7 +110,7 @@ func (m Migrate) Migrate() error {
 	return nil
 }
 
-func (m Migrate) refreshDatabase() error {
+func (m migrationTask) refreshDatabase() error {
 	log.Info().Msg("refreshing database")
 
 	err := m.repo.DropDatabase()
@@ -108,7 +130,7 @@ func (m Migrate) refreshDatabase() error {
 	return nil
 }
 
-func (m *Migrate) applyMigrations(lastAppliedMigrationNumber uint) error {
+func (m *migrationTask) applyMigrations(lastAppliedMigrationNumber uint) error {
 	if len(m.migrations) == 0 {
 		log.Info().Msg("no migrations to apply.")
 
@@ -126,7 +148,7 @@ func (m *Migrate) applyMigrations(lastAppliedMigrationNumber uint) error {
 	return m.applyForwardMigrations(lastAppliedMigrationNumber)
 }
 
-func (m *Migrate) applyBackwardMigrations(lastAppliedMigrationNumber uint) error {
+func (m *migrationTask) applyBackwardMigrations(lastAppliedMigrationNumber uint) error {
 	m.sortMigrationsDesc()
 
 	for _, migration := range m.migrations {
@@ -148,7 +170,7 @@ func (m *Migrate) applyBackwardMigrations(lastAppliedMigrationNumber uint) error
 	return nil
 }
 
-func (m *Migrate) applyForwardMigrations(lastAppliedMigrationNumber uint) error {
+func (m *migrationTask) applyForwardMigrations(lastAppliedMigrationNumber uint) error {
 	m.sortMigrationsAsc()
 
 	for _, migration := range m.migrations {
@@ -170,19 +192,19 @@ func (m *Migrate) applyForwardMigrations(lastAppliedMigrationNumber uint) error 
 	return nil
 }
 
-func (m *Migrate) sortMigrationsAsc() {
+func (m *migrationTask) sortMigrationsAsc() {
 	sort.SliceStable(m.migrations, func(i, j int) bool {
 		return m.migrations[i].Number < m.migrations[j].Number
 	})
 }
 
-func (m *Migrate) sortMigrationsDesc() {
+func (m *migrationTask) sortMigrationsDesc() {
 	sort.SliceStable(m.migrations, func(i, j int) bool {
 		return m.migrations[i].Number > m.migrations[j].Number
 	})
 }
 
-func (m *Migrate) getLastMigrationNumber() uint {
+func (m *migrationTask) getLastMigrationNumber() uint {
 	var lastNumber uint
 
 	for i := range m.migrations {
