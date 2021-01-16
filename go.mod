@@ -1,4 +1,4 @@
-module github.com/lawzava/go-pg-migrate/v1
+module github.com/lawzava/go-pg-migrate
 
 go 1.15
 
