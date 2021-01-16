@@ -1,0 +1,2 @@
+# go-pg migrations utility
+
