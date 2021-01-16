@@ -18,20 +18,19 @@ func main() {
 		m1(), m2(), m3(),
 	}
 
-	var (
-		lastVersionNumberToApply uint
-		forceVersion             bool
-		refreshDatabase          bool
-	)
+	var opt migrate.Options
 
-	flag.UintVar(&lastVersionNumberToApply, "version", 0, "version of migration to run")
-	flag.BoolVar(&forceVersion, "force", false, "version of migration to set in database without running any migrations")
-	flag.BoolVar(&refreshDatabase, "refresh", false, "refresh database, should be set for first run (when DB is empty)")
+	flag.UintVar(&opt.VersionNumberToApply, "version", 0,
+		"migrate to specified printVersion; 0 will apply all forward migrations")
+	flag.BoolVar(&opt.PrintVersionAndExit, "current", false,
+		"print last applied version and exit")
+	flag.BoolVar(&opt.ForceVersionWithoutMigrations, "force", false,
+		"force version of migration to set in database without running any migrations")
+	flag.BoolVar(&opt.RefreshSchema, "refresh", false,
+		"refresh database, should be set for first run (when DB is empty)")
 	flag.Parse()
 
-	err := migrate.
-		New(db, migrations, lastVersionNumberToApply, forceVersion, refreshDatabase).
-		Migrate()
+	err := migrate.New(db, migrations, opt).Migrate()
 	if err != nil {
 		log.Fatal(err)
 	}

@@ -20,7 +20,7 @@ func newRepo(db *pg.DB) *repository {
 func (r *repository) GetLatestMigrationNumber() (uint, error) {
 	var m migration
 
-	err := r.db.Model(&m).Order("number desc").First()
+	err := r.db.Model(&m).Order("number DESC").First()
 	if err != nil {
 		if errors.Is(err, pg.ErrNoRows) {
 			return 0, nil
