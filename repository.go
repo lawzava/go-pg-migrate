@@ -8,16 +8,26 @@ import (
 	"github.com/go-pg/pg/v10/orm"
 )
 
-type repository struct {
+type repository interface {
+	GetLatestMigrationNumber() (uint, error)
+	ForwardMigration(m *migration) error
+	BackwardMigration(m *migration) error
+	InsertMigration(m *migration) error
+	RemoveMigrationsAfter(number uint) error
+	EnsureMigrationTable() error
+	DropDatabase() error
+}
+
+type repo struct {
 	db *pg.DB
 }
 
-func newRepo(db *pg.DB) *repository {
-	return &repository{db}
+func newRepo(db *pg.DB) repository {
+	return &repo{db}
 }
 
 // GetLatestMigration returns 0,nil if not found.
-func (r *repository) GetLatestMigrationNumber() (uint, error) {
+func (r *repo) GetLatestMigrationNumber() (uint, error) {
 	var m migration
 
 	err := r.db.Model(&m).Order("number DESC").First()
@@ -33,7 +43,7 @@ func (r *repository) GetLatestMigrationNumber() (uint, error) {
 }
 
 // ForwardMigration applies the migration.
-func (r *repository) ForwardMigration(m *migration) error {
+func (r *repo) ForwardMigration(m *migration) error {
 	tx, err := r.db.Begin()
 	if err != nil {
 		return fmt.Errorf("starting transaction: %w", err)
@@ -67,7 +77,7 @@ func (r *repository) ForwardMigration(m *migration) error {
 }
 
 // BackwardMigration applies the migration.
-func (r *repository) BackwardMigration(m *migration) error {
+func (r *repo) BackwardMigration(m *migration) error {
 	tx, err := r.db.Begin()
 	if err != nil {
 		return fmt.Errorf("starting transaction: %w", err)
@@ -100,7 +110,7 @@ func (r *repository) BackwardMigration(m *migration) error {
 	return nil
 }
 
-func (r *repository) InsertMigration(m *migration) error {
+func (r *repo) InsertMigration(m *migration) error {
 	if _, err := r.db.Model(m).Insert(); err != nil {
 		return fmt.Errorf("failed to create migration record: %w", err)
 	}
@@ -108,7 +118,7 @@ func (r *repository) InsertMigration(m *migration) error {
 	return nil
 }
 
-func (r *repository) RemoveMigrationsAfter(number uint) error {
+func (r *repo) RemoveMigrationsAfter(number uint) error {
 	if _, err := r.db.Model(&migration{}).
 		Where("number >= ?", number).
 		Delete(); err != nil {
@@ -118,15 +128,7 @@ func (r *repository) RemoveMigrationsAfter(number uint) error {
 	return nil
 }
 
-func (r *repository) IncreaseErrorVerbosity() error {
-	if _, err := r.db.Exec(`SET log_error_verbosity TO 'verbose'`); err != nil {
-		return fmt.Errorf("increasing error verbosity: %w", err)
-	}
-
-	return nil
-}
-
-func (r *repository) EnsureMigrationTable() error {
+func (r *repo) EnsureMigrationTable() error {
 	err := r.db.Model(&migration{}).CreateTable(&orm.CreateTableOptions{
 		Varchar:       0,
 		Temp:          false,
@@ -140,7 +142,7 @@ func (r *repository) EnsureMigrationTable() error {
 	return nil
 }
 
-func (r *repository) DropDatabase() error {
+func (r *repo) DropDatabase() error {
 	_, err := r.db.Exec("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
 	if err != nil {
 		return fmt.Errorf("failed to drop database: %w", err)

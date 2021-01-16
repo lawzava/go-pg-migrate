@@ -14,10 +14,6 @@ func main() {
 		Database: "migrate-test",
 	})
 
-	migrations := []*migrate.Migration{
-		m1(), m2(), m3(),
-	}
-
 	var opt migrate.Options
 
 	flag.UintVar(&opt.VersionNumberToApply, "version", 0,
@@ -30,7 +26,8 @@ func main() {
 		"refresh database, should be set for first run (when DB is empty)")
 	flag.Parse()
 
-	m, err := migrate.New(db, migrations, opt)
+	m, err := migrate.New(db, opt,
+		m1, m2, m3)
 	if err != nil {
 		log.Fatal(err)
 	}

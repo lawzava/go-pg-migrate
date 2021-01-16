@@ -28,7 +28,7 @@ type Options struct {
 
 type migrationTask struct {
 	migrations []*migration
-	repo       *repository
+	repo       repository
 
 	opt Options
 }
@@ -48,7 +48,7 @@ func (m migrate) Migrate() error {
 }
 
 // New creates new migration instance.
-func New(db *pg.DB, migrations []*Migration, opt Options) (Migrate, error) {
+func New(db *pg.DB, opt Options, migrations ...*Migration) (Migrate, error) {
 	if err := validateMigrations(migrations); err != nil {
 		return nil, err
 	}
@@ -69,12 +69,7 @@ func (m migrationTask) migrate() error {
 			return fmt.Errorf("refreshing database: %w", err)
 		}
 	} else {
-		err := m.repo.IncreaseErrorVerbosity()
-		if err != nil {
-			return fmt.Errorf("failed to increase DB verbosity: %w", err)
-		}
-
-		err = m.repo.EnsureMigrationTable()
+		err := m.repo.EnsureMigrationTable()
 		if err != nil {
 			return fmt.Errorf("failed to automatically migrate migrations table: %w", err)
 		}

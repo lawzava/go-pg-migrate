@@ -60,7 +60,6 @@ linters:
     - staticcheck
     - structcheck
     - stylecheck
-    - testpackage
     - typecheck
     - unconvert
     - unparam
@@ -94,4 +93,8 @@ issues:
     - path: examples/*
       linters:
         - gomnd
+        - exhaustivestruct
+        - gochecknoglobals
+    - path: _test\.go
+      linters:
         - exhaustivestruct
