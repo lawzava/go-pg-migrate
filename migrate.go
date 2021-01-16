@@ -76,23 +76,7 @@ func (m migrationTask) migrate() error {
 	}
 
 	if m.opt.ForceVersionWithoutMigrations {
-		for _, migration := range m.migrations {
-			if migration.Number != m.opt.VersionNumberToApply {
-				continue
-			}
-
-			if err := m.repo.RemoveMigrationsAfter(migration.Number); err != nil {
-				return fmt.Errorf("failed to remove migrations: %w", err)
-			}
-
-			if err := m.repo.InsertMigration(migration); err != nil {
-				return fmt.Errorf("failed insert migration: %w", err)
-			}
-
-			return nil
-		}
-
-		return errNoMigrationVersion
+		return m.handleForceVersionWithoutMigrations()
 	}
 
 	lastAppliedMigrationNumber, err := m.repo.GetLatestMigrationNumber()
@@ -111,6 +95,26 @@ func (m migrationTask) migrate() error {
 	}
 
 	return nil
+}
+
+func (m migrationTask) handleForceVersionWithoutMigrations() error {
+	for _, migration := range m.migrations {
+		if migration.Number != m.opt.VersionNumberToApply {
+			continue
+		}
+
+		if err := m.repo.RemoveMigrationsAfter(migration.Number); err != nil {
+			return fmt.Errorf("failed to remove migrations: %w", err)
+		}
+
+		if err := m.repo.InsertMigration(migration); err != nil {
+			return fmt.Errorf("failed insert migration: %w", err)
+		}
+
+		return nil
+	}
+
+	return errNoMigrationVersion
 }
 
 func (m migrationTask) refreshDatabase() error {
@@ -165,8 +169,12 @@ func (m *migrationTask) applyBackwardMigrations(lastAppliedMigrationNumber uint)
 
 		log.Info().Msgf("applying backwards migration %d (%s)", migration.Number, migration.Name)
 
-		if err := m.repo.BackwardMigration(migration); err != nil {
+		if err := m.repo.ApplyMigration(migration.Backwards); err != nil {
 			return fmt.Errorf("failed to apply the migration (BackwardMigration): %w", err)
+		}
+
+		if err := m.repo.RemoveMigrationsAfter(migration.Number); err != nil {
+			return fmt.Errorf("failed to remove migrations: %w", err)
 		}
 	}
 
@@ -187,8 +195,12 @@ func (m *migrationTask) applyForwardMigrations(lastAppliedMigrationNumber uint) 
 
 		log.Info().Msgf("applying forward migration %d (%s)", migration.Number, migration.Name)
 
-		if err := m.repo.ForwardMigration(migration); err != nil {
+		if err := m.repo.ApplyMigration(migration.Forwards); err != nil {
 			return fmt.Errorf("failed to apply the migration (ForwardMigration): %w", err)
+		}
+
+		if err := m.repo.InsertMigration(migration); err != nil {
+			return fmt.Errorf("failed to create migration record: %w", err)
 		}
 	}
 

@@ -89,6 +89,7 @@ func performMigrate(t *testing.T, db *pg.DB, options Options, migrations []*Migr
 	return migrate.Migrate()
 }
 
+// nolint:funlen // allow longer function
 func TestMigrateErrors(t *testing.T) {
 	t.Parallel()
 
@@ -127,15 +128,29 @@ func TestMigrateErrors(t *testing.T) {
 
 	repo.On("EnsureMigrationTable").Return(nil).Once()
 	repo.On("GetLatestMigrationNumber").Return(uint(3), nil).Once()
-	repo.On("BackwardMigration", mock.Anything).Return(someErr).Once()
+	repo.On("ApplyMigration", mock.Anything, mock.Anything).Return(someErr).Once()
 	err = performMigrateTaskWithMigrations(t, repo, Options{VersionNumberToApply: 2})
 	assert.ErrorIs(t, err, someErr, "Error On BackwardMigration")
 
 	repo.On("EnsureMigrationTable").Return(nil).Once()
+	repo.On("GetLatestMigrationNumber").Return(uint(3), nil).Once()
+	repo.On("ApplyMigration", mock.Anything).Return(nil).Once()
+	repo.On("RemoveMigrationsAfter", mock.Anything).Return(someErr).Once()
+	err = performMigrateTaskWithMigrations(t, repo, Options{VersionNumberToApply: 2})
+	assert.ErrorIs(t, err, someErr, "Error On RemoveMigrationsAfter")
+
+	repo.On("EnsureMigrationTable").Return(nil).Once()
 	repo.On("GetLatestMigrationNumber").Return(uint(0), nil).Once()
-	repo.On("ForwardMigration", mock.Anything).Return(someErr).Once()
+	repo.On("ApplyMigration", mock.Anything, mock.Anything).Return(someErr).Once()
 	err = performMigrateTaskWithMigrations(t, repo, Options{})
 	assert.ErrorIs(t, err, someErr, "Error On ForwardMigration")
+
+	repo.On("EnsureMigrationTable").Return(nil).Once()
+	repo.On("GetLatestMigrationNumber").Return(uint(0), nil).Once()
+	repo.On("ApplyMigration", mock.Anything).Return(nil).Once()
+	repo.On("InsertMigration", mock.Anything).Return(someErr).Once()
+	err = performMigrateTaskWithMigrations(t, repo, Options{})
+	assert.ErrorIs(t, err, someErr, "Error On InsertMigration")
 }
 
 func performMigrateTaskWithMigrations(t *testing.T, repo repository, options Options) error {
@@ -176,6 +191,13 @@ func TestNew(t *testing.T) {
 				{Name: "Test Migration 2", Number: 1, Forwards: func(tx *pg.Tx) error { return nil }, Backwards: nil},
 			},
 			expectedErr: errDuplicateMigrationVersion,
+		},
+		{
+			name: "empty name",
+			migrations: []*Migration{
+				{Name: "", Number: 1, Forwards: func(tx *pg.Tx) error { return nil }, Backwards: nil},
+			},
+			expectedErr: errMigrationNameCannotBeEmpty,
 		},
 		{
 			name: "success",

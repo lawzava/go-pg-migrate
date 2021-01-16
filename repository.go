@@ -10,8 +10,7 @@ import (
 
 type repository interface {
 	GetLatestMigrationNumber() (uint, error)
-	ForwardMigration(m *migration) error
-	BackwardMigration(m *migration) error
+	ApplyMigration(txFunc func(*pg.Tx) error) error
 	InsertMigration(m *migration) error
 	RemoveMigrationsAfter(number uint) error
 	EnsureMigrationTable() error
@@ -42,19 +41,18 @@ func (r *repo) GetLatestMigrationNumber() (uint, error) {
 	return m.Number, nil
 }
 
-// ForwardMigration applies the migration.
-func (r *repo) ForwardMigration(m *migration) error {
+func (r *repo) ApplyMigration(txFunc func(*pg.Tx) error) error {
 	tx, err := r.db.Begin()
 	if err != nil {
 		return fmt.Errorf("starting transaction: %w", err)
 	}
 
-	if err = m.Forwards(tx); err != nil {
+	if err = txFunc(tx); err != nil {
 		if rollbackErr := tx.Rollback(); rollbackErr != nil {
-			return fmt.Errorf("failed to rollback after failed forward: %w", rollbackErr)
+			return fmt.Errorf("failed to rollback after failed transaction: %w", rollbackErr)
 		}
 
-		return fmt.Errorf("failed to Forward the migration (rolled back successfully though): %w", err)
+		return fmt.Errorf("failed to apply the migration (rolled back successfully though): %w", err)
 	}
 
 	if err = tx.Commit(); err != nil {
@@ -67,44 +65,6 @@ func (r *repo) ForwardMigration(m *migration) error {
 
 	if err = tx.Close(); err != nil {
 		return fmt.Errorf("failed to close transaction: %w", err)
-	}
-
-	if err = r.InsertMigration(m); err != nil {
-		return fmt.Errorf("failed to create migration record: %w", err)
-	}
-
-	return nil
-}
-
-// BackwardMigration applies the migration.
-func (r *repo) BackwardMigration(m *migration) error {
-	tx, err := r.db.Begin()
-	if err != nil {
-		return fmt.Errorf("starting transaction: %w", err)
-	}
-
-	if err = m.Backwards(tx); err != nil {
-		if rollbackErr := tx.Rollback(); rollbackErr != nil {
-			return fmt.Errorf("failed to rollback after failed forward: %w", rollbackErr)
-		}
-
-		return fmt.Errorf("failed to Forward the migration (rolled back successfully though): %w", err)
-	}
-
-	if err = tx.Commit(); err != nil {
-		if rollbackErr := tx.Rollback(); rollbackErr != nil {
-			return fmt.Errorf("failed to rollback after failed commit: %w", rollbackErr)
-		}
-
-		return fmt.Errorf("failed to commit the Transaction: %w", err)
-	}
-
-	if err = tx.Close(); err != nil {
-		return fmt.Errorf("failed to close transaction: %w", err)
-	}
-
-	if err := r.RemoveMigrationsAfter(m.Number); err != nil {
-		return fmt.Errorf("failed to remove migrations: %w", err)
 	}
 
 	return nil

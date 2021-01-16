@@ -28,8 +28,9 @@ type migration struct {
 }
 
 var (
-	errDuplicateMigrationVersion = errors.New("duplicate migration version is not allowed")
-	errMigrationIsMissing        = errors.New("migration is missing")
+	errDuplicateMigrationVersion  = errors.New("duplicate migration version is not allowed")
+	errMigrationIsMissing         = errors.New("migration is missing")
+	errMigrationNameCannotBeEmpty = errors.New("migration name cannot be empty")
 )
 
 func validateMigrations(m []*Migration) error {
@@ -41,6 +42,13 @@ func validateMigrations(m []*Migration) error {
 					m[j].Name, m[j].Number,
 					errDuplicateMigrationVersion)
 			}
+		}
+
+		if m[i].Name == "" {
+			return fmt.Errorf("%s (%d) name cannot be empty: %w",
+				m[i].Name, m[i].Number,
+				errMigrationNameCannotBeEmpty,
+			)
 		}
 
 		if m[i].Forwards == nil && m[i].Backwards == nil {
