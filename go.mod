@@ -3,7 +3,6 @@ module migrate
 go 1.15
 
 require (
-	github.com/go-pg/pg/extra/pgdebug v0.2.0
 	github.com/go-pg/pg/v10 v10.7.3
 	github.com/rs/zerolog v1.20.0
 	github.com/vmihailenco/msgpack/v5 v5.1.4 // indirect
