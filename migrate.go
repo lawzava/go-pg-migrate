@@ -11,27 +11,30 @@ import (
 
 var errNoMigrationVersion = errors.New("migration version not found")
 
-type Migrate struct {
-	migrations    []*migration
-	numberToApply uint
-	forceVersion  bool
-	refreshSchema bool
-
-	repo *repository
+type Options struct {
+	VersionNumberToApply          uint
+	PrintVersionAndExit           bool
+	ForceVersionWithoutMigrations bool
+	RefreshSchema                 bool
 }
 
-func New(db *pg.DB, migrations []*Migration, numberToApply uint, forceVersion, refreshSchema bool) *Migrate {
+type Migrate struct {
+	migrations []*migration
+	repo       *repository
+
+	opt Options
+}
+
+func New(db *pg.DB, migrations []*Migration, opt Options) *Migrate {
 	return &Migrate{
-		migrations:    mapMigrations(migrations),
-		numberToApply: numberToApply,
-		forceVersion:  forceVersion,
-		refreshSchema: refreshSchema,
-		repo:          newRepo(db),
+		migrations: mapMigrations(migrations),
+		repo:       newRepo(db),
+		opt:        opt,
 	}
 }
 
 func (m Migrate) Migrate() error {
-	if m.refreshSchema {
+	if m.opt.RefreshSchema {
 		if err := m.refreshDatabase(); err != nil {
 			return fmt.Errorf("refreshing database: %w", err)
 		}
@@ -47,9 +50,9 @@ func (m Migrate) Migrate() error {
 		}
 	}
 
-	if m.forceVersion {
+	if m.opt.ForceVersionWithoutMigrations {
 		for _, migration := range m.migrations {
-			if migration.Number != m.numberToApply {
+			if migration.Number != m.opt.VersionNumberToApply {
 				continue
 			}
 
@@ -67,7 +70,18 @@ func (m Migrate) Migrate() error {
 		return errNoMigrationVersion
 	}
 
-	if err := m.applyMigrations(); err != nil {
+	lastAppliedMigrationNumber, err := m.repo.GetLatestMigrationNumber()
+	if err != nil {
+		return fmt.Errorf("failed to get the number of the latest migration: %w", err)
+	}
+
+	if m.opt.PrintVersionAndExit {
+		log.Info().Msgf("currently applied version: %d", lastAppliedMigrationNumber)
+
+		return nil
+	}
+
+	if err := m.applyMigrations(lastAppliedMigrationNumber); err != nil {
 		return fmt.Errorf("failed to apply migrations: %w", err)
 	}
 
@@ -94,23 +108,18 @@ func (m Migrate) refreshDatabase() error {
 	return nil
 }
 
-func (m *Migrate) applyMigrations() error {
+func (m *Migrate) applyMigrations(lastAppliedMigrationNumber uint) error {
 	if len(m.migrations) == 0 {
 		log.Info().Msg("no migrations to apply.")
 
 		return nil
 	}
 
-	lastAppliedMigrationNumber, err := m.repo.GetLatestMigrationNumber()
-	if err != nil {
-		return fmt.Errorf("failed to get the number of the latest migration: %w", err)
+	if m.opt.VersionNumberToApply == 0 {
+		m.opt.VersionNumberToApply = m.getLastMigrationNumber()
 	}
 
-	if m.numberToApply == 0 {
-		m.numberToApply = m.getLastMigrationNumber()
-	}
-
-	if m.numberToApply < lastAppliedMigrationNumber {
+	if m.opt.VersionNumberToApply < lastAppliedMigrationNumber {
 		return m.applyBackwardMigrations(lastAppliedMigrationNumber)
 	}
 
@@ -125,7 +134,7 @@ func (m *Migrate) applyBackwardMigrations(lastAppliedMigrationNumber uint) error
 			continue
 		}
 
-		if migration.Number <= m.numberToApply {
+		if migration.Number <= m.opt.VersionNumberToApply {
 			break
 		}
 
@@ -147,7 +156,7 @@ func (m *Migrate) applyForwardMigrations(lastAppliedMigrationNumber uint) error 
 			continue
 		}
 
-		if migration.Number > m.numberToApply && m.numberToApply != 0 {
+		if migration.Number > m.opt.VersionNumberToApply && m.opt.VersionNumberToApply != 0 {
 			break
 		}
 
