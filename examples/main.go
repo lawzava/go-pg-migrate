@@ -3,9 +3,9 @@ package main
 import (
 	"flag"
 	"log"
-	"migrate"
 
 	"github.com/go-pg/pg/v10"
+	migrate "github.com/lawzava/go-pg-migrate/v1"
 )
 
 func main() {
