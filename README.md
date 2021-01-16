@@ -1,7 +1,8 @@
-![golangci](https://github.com/lawzava/go-pg-migrate/workflows/golangci/badge.svg?branch=main)
+![GolangCI](https://github.com/lawzava/go-pg-migrate/workflows/golangci/badge.svg?branch=main)
 [![Version](https://img.shields.io/badge/version-v1.0.6-green.svg)](https://github.com/lawzava/go-pg-migrate/releases)
-[![Go Reference](https://pkg.go.dev/badge/github.com/lawzava/go-pg-migrate.svg)](https://pkg.go.dev/github.com/lawzava/go-pg-migrate)
 [![Go Report Card](https://goreportcard.com/badge/github.com/lawzava/go-pg-migrate)](https://goreportcard.com/report/github.com/lawzava/go-pg-migrate)
+[![Coverage Status](https://coveralls.io/repos/github/lawzava/go-pg-migrate/badge.svg?branch=main)](https://coveralls.io/github/lawzava/go-pg-migrate?branch=main)
+[![Go Reference](https://pkg.go.dev/badge/github.com/lawzava/go-pg-migrate.svg)](https://pkg.go.dev/github.com/lawzava/go-pg-migrate)
 
 
 # go-pg-migrate
