@@ -3,6 +3,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/lawzava/go-pg-migrate)](https://goreportcard.com/report/github.com/lawzava/go-pg-migrate)
 [![Coverage Status](https://coveralls.io/repos/github/lawzava/go-pg-migrate/badge.svg?branch=main)](https://coveralls.io/github/lawzava/go-pg-migrate?branch=main)
 [![Go Reference](https://pkg.go.dev/badge/github.com/lawzava/go-pg-migrate.svg)](https://pkg.go.dev/github.com/lawzava/go-pg-migrate)
+[![Mentioned in Awesome Go](https://awesome.re/mentioned-badge.svg)](https://awesome-go.com)
 
 
 # go-pg-migrate
