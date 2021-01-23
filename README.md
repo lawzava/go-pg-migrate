@@ -15,7 +15,7 @@ CLI-friendly package for [go-pg](https://github.com/go-pg/pg) migrations managem
 Requires Go Modules enabled.
 
 ```
-go get github.com/lawzava/go-pg/migrations
+go get github.com/lawzava/go-pg-migrate
 ```
 
 ## Usage
