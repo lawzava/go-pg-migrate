@@ -163,6 +163,7 @@ func performMigrateTask(t *testing.T, repo repository, options Options, migratio
 	t.Helper()
 
 	options.LogInfo = func(format string, args ...interface{}) {
+		// nolint:forbidigo // allow in tests
 		fmt.Printf(format+"\n", args...)
 	}
 

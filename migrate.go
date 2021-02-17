@@ -11,7 +11,7 @@ import (
 
 var errNoMigrationVersion = errors.New("migration version not found")
 
-// InfoLogger defines info level logger, passes go-sprintf-friendly format & arguments
+// InfoLogger defines info level logger, passes go-sprintf-friendly format & arguments.
 type InfoLogger func(format string, args ...interface{})
 
 // Options define applied migrations options and behavior.
