@@ -162,6 +162,10 @@ func performMigrateTaskWithMigrations(t *testing.T, repo repository, options Opt
 func performMigrateTask(t *testing.T, repo repository, options Options, migrations []*Migration) error {
 	t.Helper()
 
+	options.LogInfo = func(format string, args ...interface{}) {
+		fmt.Printf(format+"\n", args...)
+	}
+
 	task := migrationTask{
 		migrations: mapMigrations(migrations),
 		repo:       repo,
