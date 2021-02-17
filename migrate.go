@@ -11,6 +11,9 @@ import (
 
 var errNoMigrationVersion = errors.New("migration version not found")
 
+// InfoLogger defines info level logger, passes go-sprintf-friendly format & arguments.
+type InfoLogger func(format string, args ...interface{})
+
 // Options define applied migrations options and behavior.
 type Options struct {
 	// VersionNumberToApply defines target version for migration actions.
@@ -24,6 +27,9 @@ type Options struct {
 
 	// RefreshSchema drops and recreates public schema.
 	RefreshSchema bool
+
+	// LogInfo handles info logging
+	LogInfo InfoLogger
 }
 
 type migrationTask struct {
@@ -51,6 +57,12 @@ func (m migrate) Migrate() error {
 func New(db *pg.DB, opt Options, migrations ...*Migration) (Migrate, error) {
 	if err := validateMigrations(migrations); err != nil {
 		return nil, err
+	}
+
+	if opt.LogInfo == nil {
+		opt.LogInfo = func(format string, args ...interface{}) {
+			log.Info().Msgf(format, args...)
+		}
 	}
 
 	return migrate{
@@ -85,7 +97,7 @@ func (m migrationTask) migrate() error {
 	}
 
 	if m.opt.PrintInfoAndExit {
-		log.Info().Msgf("currently applied version: %d", lastAppliedMigrationNumber)
+		m.opt.LogInfo("currently applied version: %d", lastAppliedMigrationNumber)
 
 		return nil
 	}
@@ -118,16 +130,14 @@ func (m migrationTask) handleForceVersionWithoutMigrations() error {
 }
 
 func (m migrationTask) refreshDatabase() error {
-	log.Info().Msg("refreshing database")
+	m.opt.LogInfo("refreshing database")
 
 	err := m.repo.DropDatabase()
 	if err != nil {
-		log.Error().Err(err).Msg("failed to DropDatabase (running with 'refresh' flag)")
-
-		return fmt.Errorf("dropping database: %w", err)
+		return fmt.Errorf("failed to DropDatabase (running with 'refresh' flag): %w", err)
 	}
 
-	log.Info().Msg("ensuring migrations table is present")
+	m.opt.LogInfo("ensuring migrations table is present")
 
 	err = m.repo.EnsureMigrationTable()
 	if err != nil {
@@ -139,7 +149,7 @@ func (m migrationTask) refreshDatabase() error {
 
 func (m *migrationTask) applyMigrations(lastAppliedMigrationNumber uint) error {
 	if len(m.migrations) == 0 {
-		log.Info().Msg("no migrations to apply.")
+		m.opt.LogInfo("no migrations to apply.")
 
 		return nil
 	}
@@ -167,7 +177,7 @@ func (m *migrationTask) applyBackwardMigrations(lastAppliedMigrationNumber uint)
 			break
 		}
 
-		log.Info().Msgf("applying backwards migration %d (%s)", migration.Number, migration.Name)
+		m.opt.LogInfo("applying backwards migration %d (%s)", migration.Number, migration.Name)
 
 		if err := m.repo.ApplyMigration(migration.Backwards); err != nil {
 			return fmt.Errorf("failed to apply the migration (BackwardMigration): %w", err)
@@ -193,7 +203,7 @@ func (m *migrationTask) applyForwardMigrations(lastAppliedMigrationNumber uint) 
 			break
 		}
 
-		log.Info().Msgf("applying forward migration %d (%s)", migration.Number, migration.Name)
+		m.opt.LogInfo("applying forward migration %d (%s)", migration.Number, migration.Name)
 
 		if err := m.repo.ApplyMigration(migration.Forwards); err != nil {
 			return fmt.Errorf("failed to apply the migration (ForwardMigration): %w", err)
