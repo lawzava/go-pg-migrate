@@ -1,4 +1,4 @@
-package migrate
+package migrate // nolint:testpackage // allow direct tests
 
 import (
 	"context"
@@ -6,13 +6,10 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/stretchr/testify/mock"
-
 	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
-
 	"github.com/go-pg/pg/v10"
-
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
 func TestMigrate(t *testing.T) {
@@ -86,7 +83,12 @@ func performMigrate(t *testing.T, db *pg.DB, options Options, migrations []*Migr
 		t.Error(err)
 	}
 
-	return migrate.Migrate()
+	err = migrate.Migrate()
+	if err != nil {
+		return fmt.Errorf("failed to execute migration: %w", err)
+	}
+
+	return nil
 }
 
 // nolint:funlen // allow longer function

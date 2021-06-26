@@ -25,7 +25,7 @@ func newRepo(db *pg.DB) repository {
 	return &repo{db}
 }
 
-// GetLatestMigration returns 0,nil if not found.
+// GetLatestMigrationNumber returns 0,nil if not found.
 func (r *repo) GetLatestMigrationNumber() (uint, error) {
 	var m migration
 
@@ -78,6 +78,7 @@ func (r *repo) InsertMigration(m *migration) error {
 	return nil
 }
 
+// nolint:exhaustivestruct // do not check for go-pg models
 func (r *repo) RemoveMigrationsAfter(number uint) error {
 	if _, err := r.db.Model(&migration{}).
 		Where("number >= ?", number).
@@ -88,6 +89,7 @@ func (r *repo) RemoveMigrationsAfter(number uint) error {
 	return nil
 }
 
+// nolint:exhaustivestruct // do not check for go-pg models
 func (r *repo) EnsureMigrationTable() error {
 	err := r.db.Model(&migration{}).CreateTable(&orm.CreateTableOptions{
 		Varchar:       0,
