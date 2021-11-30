@@ -105,7 +105,9 @@ func (r *repo) EnsureMigrationTable() error {
 }
 
 func (r *repo) DropSchema(schemaName string) error {
-	_, err := r.db.Exec(fmt.Sprintf(`DROP SCHEMA IF EXISTS "%s" CASCADE; CREATE SCHEMA IF NOT EXISTS "%s";`, schemaName, schemaName))
+	_, err := r.db.Exec(
+		fmt.Sprintf(`DROP SCHEMA IF EXISTS %q CASCADE; CREATE SCHEMA IF NOT EXISTS %q;`,
+			schemaName, schemaName))
 	if err != nil {
 		return fmt.Errorf("failed to drop schema: %w", err)
 	}
