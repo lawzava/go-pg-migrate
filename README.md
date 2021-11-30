@@ -15,7 +15,7 @@ CLI-friendly package for PostgreSQL migrations management poweder by [pgx](https
 Requires Go Modules enabled.
 
 ```
-go get github.com/lawzava/go-pg-migrate
+go get github.com/lawzava/go-pg-migrate/v2
 ```
 
 ## Usage
