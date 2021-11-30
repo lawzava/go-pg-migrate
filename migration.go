@@ -1,30 +1,35 @@
 package migrate
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"time"
-
-	"github.com/go-pg/pg/v10"
 )
+
+type Tx struct {
+	*sql.Tx
+}
 
 // Migration defines a single version of a migration to run.
 type Migration struct {
 	Name   string
 	Number uint
 
-	Forwards  func(tx *pg.Tx) error
-	Backwards func(tx *pg.Tx) error
+	Up   func(tx Tx) error
+	Down func(tx Tx) error
 }
 
-type migration struct {
-	ID        uint      `pg:",pk"`
-	CreatedAt time.Time `pg:"default:NOW(),notnull"`
-	Name      string    `pg:",notnull"`
-	Number    uint      `pg:",notnull,unique"`
+var migrations []*Migration
 
-	Forwards  func(tx *pg.Tx) error `pg:"-"`
-	Backwards func(tx *pg.Tx) error `pg:"-"`
+type migration struct {
+	ID        uint
+	CreatedAt time.Time
+	Name      string
+	Number    uint
+
+	Forwards  func(tx Tx) error `pg:"-"`
+	Backwards func(tx Tx) error `pg:"-"`
 }
 
 var (
@@ -32,6 +37,10 @@ var (
 	errMigrationIsMissing         = errors.New("migration is missing")
 	errMigrationNameCannotBeEmpty = errors.New("migration name cannot be empty")
 )
+
+func AddMigration(m *Migration) {
+	migrations = append(migrations, m)
+}
 
 func validateMigrations(m []*Migration) error {
 	for i := range m {
@@ -51,7 +60,7 @@ func validateMigrations(m []*Migration) error {
 			)
 		}
 
-		if m[i].Forwards == nil && m[i].Backwards == nil {
+		if m[i].Up == nil && m[i].Down == nil {
 			return fmt.Errorf("%s (%d) at least one migration specification is required: %w",
 				m[i].Name, m[i].Number,
 				errMigrationIsMissing,
@@ -70,8 +79,8 @@ func mapMigrations(m []*Migration) []*migration {
 		migrations[i] = &migration{
 			Name:      m[i].Name,
 			Number:    m[i].Number,
-			Forwards:  m[i].Forwards,
-			Backwards: m[i].Backwards,
+			Forwards:  m[i].Up,
+			Backwards: m[i].Down,
 		}
 	}
 

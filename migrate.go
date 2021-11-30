@@ -1,11 +1,11 @@
 package migrate
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sort"
 
-	"github.com/go-pg/pg/v10"
 	"github.com/rs/zerolog/log"
 )
 
@@ -16,6 +16,9 @@ type InfoLogger func(format string, args ...interface{})
 
 // Options define applied migrations options and behavior.
 type Options struct {
+	// DatabaseURI is the database connection string. Format 'postgres://user:password@host:port/database?sslmode=disable'.
+	DatabaseURI string
+
 	// VersionNumberToApply defines target version for migration actions.
 	VersionNumberToApply uint
 
@@ -49,6 +52,7 @@ type Migrate interface {
 
 type migrate struct {
 	task *migrationTask
+	ctx  context.Context
 }
 
 // Migrate executes actual migrations based on the specified options.
@@ -57,7 +61,7 @@ func (m migrate) Migrate() error {
 }
 
 // New creates new migration instance.
-func New(db *pg.DB, opt Options, migrations ...*Migration) (Migrate, error) {
+func New(opt Options) (Migrate, error) {
 	if err := validateMigrations(migrations); err != nil {
 		return nil, err
 	}
@@ -68,10 +72,15 @@ func New(db *pg.DB, opt Options, migrations ...*Migration) (Migrate, error) {
 		}
 	}
 
+	repo, err := newRepo(opt.DatabaseURI)
+	if err != nil {
+		return nil, err
+	}
+
 	return migrate{
 		task: &migrationTask{
 			migrations: mapMigrations(migrations),
-			repo:       newRepo(db),
+			repo:       repo,
 			opt:        opt,
 		},
 	}, nil

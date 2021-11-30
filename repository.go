@@ -1,16 +1,16 @@
 package migrate
 
 import (
-	"errors"
+	"context"
+	"database/sql"
 	"fmt"
 
-	"github.com/go-pg/pg/v10"
-	"github.com/go-pg/pg/v10/orm"
+	_ "github.com/lib/pq"
 )
 
 type repository interface {
 	GetLatestMigrationNumber() (uint, error)
-	ApplyMigration(txFunc func(*pg.Tx) error) error
+	ApplyMigration(txFunc func(Tx) error) error
 	InsertMigration(m *migration) error
 	RemoveMigrationsAfter(number uint) error
 	EnsureMigrationTable() error
@@ -18,36 +18,43 @@ type repository interface {
 }
 
 type repo struct {
-	db *pg.DB
+	ctx context.Context
+	db  *sql.DB
 }
 
-func newRepo(db *pg.DB) repository {
-	return &repo{db}
+func newRepo(databaseURI string) (repository, error) {
+	db, err := sql.Open("postgres", databaseURI)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open database: %w", err)
+	}
+
+	return &repo{context.Background(), db}, nil
 }
 
 // GetLatestMigrationNumber returns 0,nil if not found.
 func (r *repo) GetLatestMigrationNumber() (uint, error) {
-	var m migration
+	var latestMigrationNumber uint
 
-	err := r.db.Model(&m).Order("number DESC").First()
+	err := r.db.QueryRowContext(r.ctx, "SELECT number FROM migrations ORDER BY number DESC LIMIT 1").
+		Scan(&latestMigrationNumber)
 	if err != nil {
-		if errors.Is(err, pg.ErrNoRows) {
+		if err == sql.ErrNoRows {
 			return 0, nil
 		}
 
-		return 0, fmt.Errorf("querying for latest migration: %w", err)
+		return 0, fmt.Errorf("failed to get latest migration number: %w", err)
 	}
 
-	return m.Number, nil
+	return latestMigrationNumber, nil
 }
 
-func (r *repo) ApplyMigration(txFunc func(*pg.Tx) error) error {
+func (r *repo) ApplyMigration(txFunc func(Tx) error) error {
 	tx, err := r.db.Begin()
 	if err != nil {
 		return fmt.Errorf("starting transaction: %w", err)
 	}
 
-	if err = txFunc(tx); err != nil {
+	if err = txFunc(Tx{tx}); err != nil {
 		if rollbackErr := tx.Rollback(); rollbackErr != nil {
 			return fmt.Errorf("failed to rollback after failed transaction: %w", rollbackErr)
 		}
@@ -63,15 +70,14 @@ func (r *repo) ApplyMigration(txFunc func(*pg.Tx) error) error {
 		return fmt.Errorf("failed to commit the Transaction: %w", err)
 	}
 
-	if err = tx.Close(); err != nil {
-		return fmt.Errorf("failed to close transaction: %w", err)
-	}
-
 	return nil
 }
 
 func (r *repo) InsertMigration(m *migration) error {
-	if _, err := r.db.Model(m).Insert(); err != nil {
+	_, err := r.db.ExecContext(r.ctx,
+		"INSERT INTO migrations (number, name) VALUES ($1, $2)",
+		m.Number, m.Name)
+	if err != nil {
 		return fmt.Errorf("failed to create migration record: %w", err)
 	}
 
@@ -80,10 +86,12 @@ func (r *repo) InsertMigration(m *migration) error {
 
 // nolint:exhaustivestruct // do not check for go-pg models
 func (r *repo) RemoveMigrationsAfter(number uint) error {
-	if _, err := r.db.Model(&migration{}).
-		Where("number >= ?", number).
-		Delete(); err != nil {
-		return fmt.Errorf("failed to create migration record: %w", err)
+	_, err := r.db.ExecContext(r.ctx,
+		"DELETE FROM migrations WHERE number >= $1",
+		number,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to delete migrations: %w", err)
 	}
 
 	return nil
@@ -91,12 +99,14 @@ func (r *repo) RemoveMigrationsAfter(number uint) error {
 
 // nolint:exhaustivestruct // do not check for go-pg models
 func (r *repo) EnsureMigrationTable() error {
-	err := r.db.Model(&migration{}).CreateTable(&orm.CreateTableOptions{
-		Varchar:       0,
-		Temp:          false,
-		IfNotExists:   true,
-		FKConstraints: false,
-	})
+	_, err := r.db.ExecContext(r.ctx, `
+		CREATE TABLE IF NOT EXISTS migrations (
+			id SERIAL PRIMARY KEY,
+			created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			number INTEGER NOT NULL UNIQUE,
+			name VARCHAR(255) NOT NULL
+		)
+	`)
 	if err != nil {
 		return fmt.Errorf("failed to ensure migration table: %w", err)
 	}
@@ -105,7 +115,7 @@ func (r *repo) EnsureMigrationTable() error {
 }
 
 func (r *repo) DropSchema(schemaName string) error {
-	_, err := r.db.Exec(
+	_, err := r.db.ExecContext(r.ctx,
 		fmt.Sprintf(`DROP SCHEMA IF EXISTS %q CASCADE; CREATE SCHEMA IF NOT EXISTS %q;`,
 			schemaName, schemaName))
 	if err != nil {

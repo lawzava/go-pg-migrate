@@ -8,7 +8,7 @@ require (
 	github.com/go-pg/pg/v10 v10.10.6
 	github.com/golang/snappy v0.0.2 // indirect
 	github.com/google/go-cmp v0.5.6 // indirect
-	github.com/lib/pq v1.9.0 // indirect
+	github.com/lib/pq v1.10.4
 	github.com/nwaples/rardecode v1.1.0 // indirect
 	github.com/pierrec/lz4 v2.6.0+incompatible // indirect
 	github.com/rs/zerolog v1.26.0

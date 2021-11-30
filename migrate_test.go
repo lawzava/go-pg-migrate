@@ -1,13 +1,11 @@
 package migrate // nolint:testpackage // allow direct tests
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"testing"
 
 	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
-	"github.com/go-pg/pg/v10"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )
@@ -29,59 +27,57 @@ func TestMigrate(t *testing.T) {
 		}
 	}()
 
-	db := preparePG()
-
-	if err = db.Ping(context.Background()); err != nil {
-		t.Error(err)
-	}
-
-	err = performMigrateWithMigrations(t, db, Options{})
+	err = performMigrateWithMigrations(t, Options{})
 	assert.NoError(t, err, "Migrate Default")
 
-	err = performMigrateWithMigrations(t, db, Options{RefreshSchema: true})
+	err = performMigrateWithMigrations(t, Options{RefreshSchema: true})
 	assert.NoError(t, err, "Refresh Schema")
 
-	err = performMigrateWithMigrations(t, db, Options{SchemasToRefresh: []string{"public", "test"}})
+	err = performMigrateWithMigrations(t, Options{SchemasToRefresh: []string{"public", "test"}})
 	assert.NoError(t, err, "Refresh Schemas 'public' and 'test'")
 
-	err = performMigrateWithMigrations(t, db, Options{VersionNumberToApply: 2})
-	assert.NoError(t, err, "Migrate Backwards 2")
+	err = performMigrateWithMigrations(t, Options{VersionNumberToApply: 2})
+	assert.NoError(t, err, "Migrate Down 2")
 
-	err = performMigrateWithMigrations(t, db, Options{VersionNumberToApply: 1})
-	assert.NoError(t, err, "Migrate Backwards 1")
+	err = performMigrateWithMigrations(t, Options{VersionNumberToApply: 1})
+	assert.NoError(t, err, "Migrate Down 1")
 
-	err = performMigrateWithMigrations(t, db, Options{VersionNumberToApply: 2})
+	err = performMigrateWithMigrations(t, Options{VersionNumberToApply: 2})
 	assert.NoError(t, err, "Migrate Forward 2")
 
-	err = performMigrateWithMigrations(t, db, Options{VersionNumberToApply: 3})
+	err = performMigrateWithMigrations(t, Options{VersionNumberToApply: 3})
 	assert.NoError(t, err, "Migrate Forward 3")
 
-	err = performMigrateWithMigrations(t, db, Options{VersionNumberToApply: 2, ForceVersionWithoutMigrations: true})
+	err = performMigrateWithMigrations(t, Options{VersionNumberToApply: 2, ForceVersionWithoutMigrations: true})
 	assert.NoError(t, err, "Force Incorrect Version")
 
-	err = performMigrateWithMigrations(t, db, Options{PrintInfoAndExit: true})
+	err = performMigrateWithMigrations(t, Options{PrintInfoAndExit: true})
 	assert.NoError(t, err, "Print Info")
 
-	err = performMigrateWithMigrations(t, db, Options{VersionNumberToApply: 3, ForceVersionWithoutMigrations: true})
+	err = performMigrateWithMigrations(t, Options{VersionNumberToApply: 3, ForceVersionWithoutMigrations: true})
 	assert.NoError(t, err, "Force Correct Version")
 
-	err = performMigrate(t, db, Options{}, []*Migration{})
+	err = performMigrate(t, Options{})
 	assert.NoError(t, err, "No Migrations To apply")
 
-	err = performMigrateWithMigrations(t, db, Options{VersionNumberToApply: 0, ForceVersionWithoutMigrations: true})
+	err = performMigrateWithMigrations(t, Options{VersionNumberToApply: 0, ForceVersionWithoutMigrations: true})
 	assert.ErrorIs(t, err, errNoMigrationVersion, "Force Version Is Missing")
 }
 
-func performMigrateWithMigrations(t *testing.T, db *pg.DB, options Options) error {
+func performMigrateWithMigrations(t *testing.T, options Options) error {
 	t.Helper()
 
-	return performMigrate(t, db, options, prepareMigrations())
+	migrations = prepareMigrations()
+
+	return performMigrate(t, options)
 }
 
-func performMigrate(t *testing.T, db *pg.DB, options Options, migrations []*Migration) error {
+func performMigrate(t *testing.T, options Options) error {
 	t.Helper()
 
-	migrate, err := New(db, options, migrations...)
+	options.DatabaseURI = "postgres://migrate:migrate@localhost:54320/migrate?sslmode=disable"
+
+	migrate, err := New(options)
 	if err != nil {
 		t.Error(err)
 	}
@@ -191,29 +187,29 @@ func TestNew(t *testing.T) {
 	}{
 		{
 			name:        "missing migrations",
-			migrations:  []*Migration{{Name: "Test Migration", Number: 1, Forwards: nil, Backwards: nil}},
+			migrations:  []*Migration{{Name: "Test Migration", Number: 1, Up: nil, Down: nil}},
 			expectedErr: errMigrationIsMissing,
 		},
 		{
 			name: "duplicate migrations",
 			migrations: []*Migration{
-				{Name: "Test Migration", Number: 1, Forwards: func(tx *pg.Tx) error { return nil }, Backwards: nil},
-				{Name: "Test Migration 2", Number: 1, Forwards: func(tx *pg.Tx) error { return nil }, Backwards: nil},
+				{Name: "Test Migration", Number: 1, Up: func(tx Tx) error { return nil }, Down: nil},
+				{Name: "Test Migration 2", Number: 1, Up: func(tx Tx) error { return nil }, Down: nil},
 			},
 			expectedErr: errDuplicateMigrationVersion,
 		},
 		{
 			name: "empty name",
 			migrations: []*Migration{
-				{Name: "", Number: 1, Forwards: func(tx *pg.Tx) error { return nil }, Backwards: nil},
+				{Name: "", Number: 1, Up: func(tx Tx) error { return nil }, Down: nil},
 			},
 			expectedErr: errMigrationNameCannotBeEmpty,
 		},
 		{
 			name: "success",
 			migrations: []*Migration{
-				{Name: "Test Migration", Number: 1, Forwards: func(tx *pg.Tx) error { return nil }, Backwards: nil},
-				{Name: "Test Migration 2", Number: 2, Forwards: func(tx *pg.Tx) error { return nil }, Backwards: nil},
+				{Name: "Test Migration", Number: 1, Up: func(tx Tx) error { return nil }, Down: nil},
+				{Name: "Test Migration 2", Number: 2, Up: func(tx Tx) error { return nil }, Down: nil},
 			},
 			expectedErr: nil,
 		},
@@ -222,7 +218,9 @@ func TestNew(t *testing.T) {
 	var opt Options
 
 	for _, testCase := range testCases {
-		_, err := New(nil, opt, testCase.migrations...)
+		migrations = testCase.migrations
+
+		_, err := New(opt)
 
 		assert.ErrorIs(t, err, testCase.expectedErr, testCase.name)
 	}
@@ -237,23 +235,13 @@ func prepareDB() *embeddedpostgres.EmbeddedPostgres {
 		Port(54320))
 }
 
-func preparePG() *pg.DB {
-	return pg.Connect(
-		&pg.Options{
-			User:     "migrate",
-			Password: "migrate",
-			Database: "migrate",
-			Addr:     ":54320",
-		})
-}
-
 // nolint:funlen // allow longer function
 func prepareMigrations() []*Migration {
-	return []*Migration{
+	migrations := []*Migration{
 		{
 			Name:   "Create Users Table",
 			Number: 1,
-			Forwards: func(tx *pg.Tx) error {
+			Up: func(tx Tx) error {
 				_, err := tx.Exec("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)")
 				if err != nil {
 					return fmt.Errorf("failed to create users table: %w", err)
@@ -261,7 +249,7 @@ func prepareMigrations() []*Migration {
 
 				return nil
 			},
-			Backwards: func(tx *pg.Tx) error {
+			Down: func(tx Tx) error {
 				_, err := tx.Exec("DROP TABLE users")
 				if err != nil {
 					return fmt.Errorf("failed to drop users table: %w", err)
@@ -273,7 +261,7 @@ func prepareMigrations() []*Migration {
 		{
 			Name:   "Add Email For Users",
 			Number: 2,
-			Forwards: func(tx *pg.Tx) error {
+			Up: func(tx Tx) error {
 				_, err := tx.Exec("ALTER TABLE users ADD COLUMN email TEXT")
 				if err != nil {
 					return fmt.Errorf("failed to alter users table to add email: %w", err)
@@ -281,7 +269,7 @@ func prepareMigrations() []*Migration {
 
 				return nil
 			},
-			Backwards: func(tx *pg.Tx) error {
+			Down: func(tx Tx) error {
 				_, err := tx.Exec("ALTER TABLE users DROP COLUMN email")
 				if err != nil {
 					return fmt.Errorf("failed to drop email column for users table: %w", err)
@@ -293,7 +281,7 @@ func prepareMigrations() []*Migration {
 		{
 			Name:   "Add Address For Users",
 			Number: 3,
-			Forwards: func(tx *pg.Tx) error {
+			Up: func(tx Tx) error {
 				_, err := tx.Exec("ALTER TABLE users ADD COLUMN address TEXT")
 				if err != nil {
 					return fmt.Errorf("failed to alter users table to add address: %w", err)
@@ -301,7 +289,7 @@ func prepareMigrations() []*Migration {
 
 				return nil
 			},
-			Backwards: func(tx *pg.Tx) error {
+			Down: func(tx Tx) error {
 				_, err := tx.Exec("ALTER TABLE users DROP COLUMN address")
 				if err != nil {
 					return fmt.Errorf("failed to drop address column for users table: %w", err)
@@ -311,4 +299,6 @@ func prepareMigrations() []*Migration {
 			},
 		},
 	}
+
+	return migrations
 }
