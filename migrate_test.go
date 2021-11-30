@@ -41,6 +41,9 @@ func TestMigrate(t *testing.T) {
 	err = performMigrateWithMigrations(t, db, Options{RefreshSchema: true})
 	assert.NoError(t, err, "Refresh Schema")
 
+	err = performMigrateWithMigrations(t, db, Options{SchemasToRefresh: []string{"public", "test"}})
+	assert.NoError(t, err, "Refresh Schemas 'public' and 'test'")
+
 	err = performMigrateWithMigrations(t, db, Options{VersionNumberToApply: 2})
 	assert.NoError(t, err, "Migrate Backwards 2")
 
@@ -103,14 +106,14 @@ func TestMigrateErrors(t *testing.T) {
 	err := performMigrateTaskWithMigrations(t, repo, Options{})
 	assert.ErrorIs(t, err, someErr, "Error On MigrationTable")
 
-	repo.On("DropDatabase").Return(someErr).Once()
+	repo.On("DropSchema", "public").Return(someErr).Once()
 	err = performMigrateTaskWithMigrations(t, repo, Options{RefreshSchema: true})
-	assert.ErrorIs(t, err, someErr, "Error On DropDatabase")
+	assert.ErrorIs(t, err, someErr, "Error On DropSchema")
 
-	repo.On("DropDatabase").Return(nil).Once()
+	repo.On("DropSchema", "public").Return(nil).Once()
 	repo.On("EnsureMigrationTable").Return(someErr).Once()
 	err = performMigrateTaskWithMigrations(t, repo, Options{RefreshSchema: true})
-	assert.ErrorIs(t, err, someErr, "Error On EnsureMigrationTable After DropDatabase")
+	assert.ErrorIs(t, err, someErr, "Error On EnsureMigrationTable After DropSchema")
 
 	repo.On("EnsureMigrationTable").Return(nil).Once()
 	repo.On("RemoveMigrationsAfter", mock.Anything).Return(someErr).Once()

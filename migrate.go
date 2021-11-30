@@ -28,6 +28,9 @@ type Options struct {
 	// RefreshSchema drops and recreates public schema.
 	RefreshSchema bool
 
+	// SchemasToRefresh drops & recreates specified schemas.
+	SchemasToRefresh []string
+
 	// LogInfo handles info logging
 	LogInfo InfoLogger
 }
@@ -77,8 +80,14 @@ func New(db *pg.DB, opt Options, migrations ...*Migration) (Migrate, error) {
 // migrate applies actual migrations based on the specified options.
 func (m migrationTask) migrate() error {
 	if m.opt.RefreshSchema {
-		if err := m.refreshDatabase(); err != nil {
-			return fmt.Errorf("refreshing database: %w", err)
+		if err := m.refreshSchema("public"); err != nil {
+			return fmt.Errorf("refreshing schema 'public': %w", err)
+		}
+	} else if len(m.opt.SchemasToRefresh) > 0 {
+		for _, schemaName := range m.opt.SchemasToRefresh {
+			if err := m.refreshSchema(schemaName); err != nil {
+				return fmt.Errorf("refreshing schema %s: %w", schemaName, err)
+			}
 		}
 	} else {
 		err := m.repo.EnsureMigrationTable()
@@ -129,12 +138,12 @@ func (m migrationTask) handleForceVersionWithoutMigrations() error {
 	return errNoMigrationVersion
 }
 
-func (m migrationTask) refreshDatabase() error {
+func (m migrationTask) refreshSchema(schemaName string) error {
 	m.opt.LogInfo("refreshing database")
 
-	err := m.repo.DropDatabase()
+	err := m.repo.DropSchema(schemaName)
 	if err != nil {
-		return fmt.Errorf("failed to DropDatabase (running with 'refresh' flag): %w", err)
+		return fmt.Errorf("failed to DropSchema (running with 'refresh' flag): %w", err)
 	}
 
 	m.opt.LogInfo("ensuring migrations table is present")

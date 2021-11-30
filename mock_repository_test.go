@@ -26,13 +26,13 @@ func (_m *mockRepository) ApplyMigration(txFunc func(*pg.Tx) error) error {
 	return r0
 }
 
-// DropDatabase provides a mock function with given fields:
-func (_m *mockRepository) DropDatabase() error {
-	ret := _m.Called()
+// DropSchema provides a mock function with given fields: schemaName
+func (_m *mockRepository) DropSchema(schemaName string) error {
+	ret := _m.Called(schemaName)
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func() error); ok {
-		r0 = rf()
+	if rf, ok := ret.Get(0).(func(string) error); ok {
+		r0 = rf(schemaName)
 	} else {
 		r0 = ret.Error(0)
 	}
