@@ -8,7 +8,7 @@
 
 # go-pg-migrate
 
-CLI-friendly package for PostgreSQL migrations management poweder by [pgx](https://github.com/jackc/pgx)
+CLI-friendly package for PostgreSQL migrations management.
 
 ## Installation
 
