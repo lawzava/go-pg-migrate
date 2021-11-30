@@ -3,9 +3,10 @@ package migrate
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 
-	_ "github.com/lib/pq"
+	_ "github.com/lib/pq" // postgres driver
 )
 
 type repository interface {
@@ -22,7 +23,7 @@ type repo struct {
 	db  *sql.DB
 }
 
-func newRepo(databaseURI string) (repository, error) {
+func newRepo(databaseURI string) (*repo, error) {
 	db, err := sql.Open("postgres", databaseURI)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
@@ -38,7 +39,7 @@ func (r *repo) GetLatestMigrationNumber() (uint, error) {
 	err := r.db.QueryRowContext(r.ctx, "SELECT number FROM migrations ORDER BY number DESC LIMIT 1").
 		Scan(&latestMigrationNumber)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return 0, nil
 		}
 
@@ -49,21 +50,21 @@ func (r *repo) GetLatestMigrationNumber() (uint, error) {
 }
 
 func (r *repo) ApplyMigration(txFunc func(Tx) error) error {
-	tx, err := r.db.Begin()
+	dbTransaction, err := r.db.Begin()
 	if err != nil {
 		return fmt.Errorf("starting transaction: %w", err)
 	}
 
-	if err = txFunc(Tx{tx}); err != nil {
-		if rollbackErr := tx.Rollback(); rollbackErr != nil {
+	if err = txFunc(Tx{dbTransaction}); err != nil {
+		if rollbackErr := dbTransaction.Rollback(); rollbackErr != nil {
 			return fmt.Errorf("failed to rollback after failed transaction: %w", rollbackErr)
 		}
 
 		return fmt.Errorf("failed to apply the migration (rolled back successfully though): %w", err)
 	}
 
-	if err = tx.Commit(); err != nil {
-		if rollbackErr := tx.Rollback(); rollbackErr != nil {
+	if err = dbTransaction.Commit(); err != nil {
+		if rollbackErr := dbTransaction.Rollback(); rollbackErr != nil {
 			return fmt.Errorf("failed to rollback after failed commit: %w", rollbackErr)
 		}
 
@@ -84,7 +85,6 @@ func (r *repo) InsertMigration(m *migration) error {
 	return nil
 }
 
-// nolint:exhaustivestruct // do not check for go-pg models
 func (r *repo) RemoveMigrationsAfter(number uint) error {
 	_, err := r.db.ExecContext(r.ctx,
 		"DELETE FROM migrations WHERE number >= $1",
@@ -97,7 +97,6 @@ func (r *repo) RemoveMigrationsAfter(number uint) error {
 	return nil
 }
 
-// nolint:exhaustivestruct // do not check for go-pg models
 func (r *repo) EnsureMigrationTable() error {
 	_, err := r.db.ExecContext(r.ctx, `
 		CREATE TABLE IF NOT EXISTS migrations (

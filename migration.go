@@ -20,6 +20,7 @@ type Migration struct {
 	Down func(tx Tx) error
 }
 
+// nolint:gochecknoglobals // allow global var as it's short-lived
 var migrations []*Migration
 
 type migration struct {
@@ -42,27 +43,28 @@ func AddMigration(m *Migration) {
 	migrations = append(migrations, m)
 }
 
-func validateMigrations(m []*Migration) error {
-	for i := range m {
-		for j := range m {
-			if i != j && m[i].Number == m[j].Number {
+func validateMigrations(migrations []*Migration) error {
+	for migrationIdx := range migrations {
+		for migrationSecondaryIdx := range migrations {
+			if migrationIdx != migrationSecondaryIdx &&
+				migrations[migrationIdx].Number == migrations[migrationSecondaryIdx].Number {
 				return fmt.Errorf("%s (%d) and %s (%d) have duplicate numbers: %w",
-					m[i].Name, m[i].Number,
-					m[j].Name, m[j].Number,
+					migrations[migrationIdx].Name, migrations[migrationIdx].Number,
+					migrations[migrationSecondaryIdx].Name, migrations[migrationSecondaryIdx].Number,
 					errDuplicateMigrationVersion)
 			}
 		}
 
-		if m[i].Name == "" {
+		if migrations[migrationIdx].Name == "" {
 			return fmt.Errorf("%s (%d) name cannot be empty: %w",
-				m[i].Name, m[i].Number,
+				migrations[migrationIdx].Name, migrations[migrationIdx].Number,
 				errMigrationNameCannotBeEmpty,
 			)
 		}
 
-		if m[i].Up == nil && m[i].Down == nil {
+		if migrations[migrationIdx].Up == nil && migrations[migrationIdx].Down == nil {
 			return fmt.Errorf("%s (%d) at least one migration specification is required: %w",
-				m[i].Name, m[i].Number,
+				migrations[migrationIdx].Name, migrations[migrationIdx].Number,
 				errMigrationIsMissing,
 			)
 		}
@@ -71,16 +73,16 @@ func validateMigrations(m []*Migration) error {
 	return nil
 }
 
-func mapMigrations(m []*Migration) []*migration {
-	migrations := make([]*migration, len(m))
+func mapMigrations(rawMigrations []*Migration) []*migration {
+	migrations := make([]*migration, len(rawMigrations))
 
-	for i := range m {
+	for migrationIdx := range rawMigrations {
 		// nolint:exhaustivestruct // ID & created_at are filled by go-pg
-		migrations[i] = &migration{
-			Name:      m[i].Name,
-			Number:    m[i].Number,
-			Forwards:  m[i].Up,
-			Backwards: m[i].Down,
+		migrations[migrationIdx] = &migration{
+			Name:      rawMigrations[migrationIdx].Name,
+			Number:    rawMigrations[migrationIdx].Number,
+			Forwards:  rawMigrations[migrationIdx].Up,
+			Backwards: rawMigrations[migrationIdx].Down,
 		}
 	}
 

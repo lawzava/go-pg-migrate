@@ -1,7 +1,6 @@
 package migrate
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"sort"
@@ -52,7 +51,6 @@ type Migrate interface {
 
 type migrate struct {
 	task *migrationTask
-	ctx  context.Context
 }
 
 // Migrate executes actual migrations based on the specified options.
@@ -61,6 +59,7 @@ func (m migrate) Migrate() error {
 }
 
 // New creates new migration instance.
+// nolint:ireturn // allow returning interface
 func New(opt Options) (Migrate, error) {
 	if err := validateMigrations(migrations); err != nil {
 		return nil, err
@@ -77,7 +76,7 @@ func New(opt Options) (Migrate, error) {
 		return nil, err
 	}
 
-	return migrate{
+	return &migrate{
 		task: &migrationTask{
 			migrations: mapMigrations(migrations),
 			repo:       repo,
