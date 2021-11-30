@@ -7,7 +7,7 @@ linters-settings:
       - performance
       - style
   goimports:
-    local-prefixes: github.com/golangci/golangci-lint
+    local-prefixes: github.com/lawzava/go-pg-migrate
   govet:
     check-shadowing: true
   misspell:

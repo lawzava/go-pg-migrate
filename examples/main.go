@@ -4,18 +4,14 @@ import (
 	"flag"
 	"log"
 
-	"github.com/go-pg/pg/v10"
 	migrate "github.com/lawzava/go-pg-migrate"
 )
 
 func main() {
-	db := pg.Connect(&pg.Options{
-		User:     "postgres",
-		Database: "migrate-test",
-	})
-
 	var opt migrate.Options
 
+	flag.StringVar(&opt.DatabaseURI, "database-uri", "postgres://postgres@localhost:5432/migrate-test",
+		"database uri to connect to")
 	flag.UintVar(&opt.VersionNumberToApply, "version", 0,
 		"migrate to specified printVersion; 0 will apply all forward migrations")
 	flag.BoolVar(&opt.PrintInfoAndExit, "current", false,
@@ -26,8 +22,7 @@ func main() {
 		"refresh database, should be set for first run (when DB is empty)")
 	flag.Parse()
 
-	m, err := migrate.New(db, opt,
-		m1, m2, m3)
+	m, err := migrate.New(opt)
 	if err != nil {
 		log.Fatal(err)
 	}
