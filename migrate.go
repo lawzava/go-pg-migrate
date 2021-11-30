@@ -78,22 +78,9 @@ func New(db *pg.DB, opt Options, migrations ...*Migration) (Migrate, error) {
 }
 
 // migrate applies actual migrations based on the specified options.
-func (m migrationTask) migrate() error {
-	if m.opt.RefreshSchema {
-		if err := m.refreshSchema("public"); err != nil {
-			return fmt.Errorf("refreshing schema 'public': %w", err)
-		}
-	} else if len(m.opt.SchemasToRefresh) > 0 {
-		for _, schemaName := range m.opt.SchemasToRefresh {
-			if err := m.refreshSchema(schemaName); err != nil {
-				return fmt.Errorf("refreshing schema %s: %w", schemaName, err)
-			}
-		}
-	} else {
-		err := m.repo.EnsureMigrationTable()
-		if err != nil {
-			return fmt.Errorf("failed to automatically migrate migrations table: %w", err)
-		}
+func (m *migrationTask) migrate() error {
+	if err := m.performPreMigrationTask(); err != nil {
+		return fmt.Errorf("failed to perform pre-migration task: %w", err)
 	}
 
 	if m.opt.ForceVersionWithoutMigrations {
@@ -118,7 +105,29 @@ func (m migrationTask) migrate() error {
 	return nil
 }
 
-func (m migrationTask) handleForceVersionWithoutMigrations() error {
+func (m *migrationTask) performPreMigrationTask() error {
+	switch {
+	case m.opt.RefreshSchema:
+		if err := m.refreshSchema("public"); err != nil {
+			return fmt.Errorf("refreshing schema 'public': %w", err)
+		}
+	case len(m.opt.SchemasToRefresh) > 0:
+		for _, schemaName := range m.opt.SchemasToRefresh {
+			if err := m.refreshSchema(schemaName); err != nil {
+				return fmt.Errorf("refreshing schema %s: %w", schemaName, err)
+			}
+		}
+	default:
+		err := m.repo.EnsureMigrationTable()
+		if err != nil {
+			return fmt.Errorf("failed to automatically migrate migrations table: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (m *migrationTask) handleForceVersionWithoutMigrations() error {
 	for _, migration := range m.migrations {
 		if migration.Number != m.opt.VersionNumberToApply {
 			continue
@@ -138,7 +147,7 @@ func (m migrationTask) handleForceVersionWithoutMigrations() error {
 	return errNoMigrationVersion
 }
 
-func (m migrationTask) refreshSchema(schemaName string) error {
+func (m *migrationTask) refreshSchema(schemaName string) error {
 	m.opt.LogInfo("refreshing database")
 
 	err := m.repo.DropSchema(schemaName)
