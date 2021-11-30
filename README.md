@@ -22,6 +22,8 @@ go get github.com/lawzava/go-pg-migrate/v2
 
 Initialize the `migrate` with options payload where choices are:
 
+- `DatabaseURI` database connection string. In a format of `postgres://user:password@host:port/database?sslmode=disable`.
+
 - `VersionNumberToApply` uint value of a migration number up to which the migrations should be applied. 
 When the requested migration number is lower than currently applied migration number it will run backward migrations, otherwise it will run forward migrations.
   
