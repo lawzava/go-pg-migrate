@@ -14,7 +14,7 @@ type repository interface {
 	InsertMigration(m *migration) error
 	RemoveMigrationsAfter(number uint) error
 	EnsureMigrationTable() error
-	DropDatabase() error
+	DropSchema(schemaName string) error
 }
 
 type repo struct {
@@ -104,10 +104,10 @@ func (r *repo) EnsureMigrationTable() error {
 	return nil
 }
 
-func (r *repo) DropDatabase() error {
-	_, err := r.db.Exec("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
+func (r *repo) DropSchema(schemaName string) error {
+	_, err := r.db.Exec(fmt.Sprintf(`DROP SCHEMA IF EXISTS "%s" CASCADE; CREATE SCHEMA IF NOT EXISTS "%s";`, schemaName, schemaName))
 	if err != nil {
-		return fmt.Errorf("failed to drop database: %w", err)
+		return fmt.Errorf("failed to drop schema: %w", err)
 	}
 
 	return nil
