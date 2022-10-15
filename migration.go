@@ -20,7 +20,7 @@ type Migration struct {
 	Down func(tx Tx) error
 }
 
-// nolint:gochecknoglobals // allow global var as it's short-lived
+//nolint:gochecknoglobals // allow global var as it's short-lived
 var migrations []*Migration
 
 type migration struct {
@@ -77,7 +77,7 @@ func mapMigrations(rawMigrations []*Migration) []*migration {
 	migrations := make([]*migration, len(rawMigrations))
 
 	for migrationIdx := range rawMigrations {
-		// nolint:exhaustivestruct // ID & created_at are not used
+		//nolint:exhaustivestruct,exhaustruct // ID & created_at are not used
 		migrations[migrationIdx] = &migration{
 			Name:      rawMigrations[migrationIdx].Name,
 			Number:    rawMigrations[migrationIdx].Number,

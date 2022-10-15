@@ -7,12 +7,17 @@ import (
 )
 
 func init() {
+	const (
+		up   = `CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)`
+		down = `DROP TABLE users`
+	)
+
 	migrate.AddMigration(
 		&migrate.Migration{
 			Name:   "Create Users Table",
 			Number: 1,
 			Up: func(tx migrate.Tx) error {
-				_, err := tx.Exec("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)")
+				_, err := tx.Exec(up)
 				if err != nil {
 					return fmt.Errorf("failed to create users table: %w", err)
 				}
@@ -20,7 +25,7 @@ func init() {
 				return nil
 			},
 			Down: func(tx migrate.Tx) error {
-				_, err := tx.Exec("DROP TABLE users")
+				_, err := tx.Exec(down)
 				if err != nil {
 					return fmt.Errorf("failed to drop users table: %w", err)
 				}

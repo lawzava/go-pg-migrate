@@ -44,23 +44,19 @@ type migrationTask struct {
 	opt Options
 }
 
-// Migrate describes migration tasks.
-type Migrate interface {
-	Migrate() error
-}
-
-type migrate struct {
+type Migrate struct {
 	task *migrationTask
 }
 
 // Migrate executes actual migrations based on the specified options.
-func (m migrate) Migrate() error {
+func (m Migrate) Migrate() error {
 	return m.task.migrate()
 }
 
 // New creates new migration instance.
-// nolint:ireturn // allow returning interface
-func New(opt Options) (Migrate, error) {
+//
+
+func New(opt Options) (*Migrate, error) {
 	if err := validateMigrations(migrations); err != nil {
 		return nil, err
 	}
@@ -76,7 +72,7 @@ func New(opt Options) (Migrate, error) {
 		return nil, err
 	}
 
-	return &migrate{
+	return &Migrate{
 		task: &migrationTask{
 			migrations: mapMigrations(migrations),
 			repo:       repo,
@@ -85,7 +81,7 @@ func New(opt Options) (Migrate, error) {
 	}, nil
 }
 
-// migrate applies actual migrations based on the specified options.
+// Migrate applies actual migrations based on the specified options.
 func (m *migrationTask) migrate() error {
 	if err := m.performPreMigrationTask(); err != nil {
 		return fmt.Errorf("failed to perform pre-migration task: %w", err)
@@ -128,7 +124,7 @@ func (m *migrationTask) performPreMigrationTask() error {
 	default:
 		err := m.repo.EnsureMigrationTable()
 		if err != nil {
-			return fmt.Errorf("failed to automatically migrate migrations table: %w", err)
+			return fmt.Errorf("failed to automatically Migrate migrations table: %w", err)
 		}
 	}
 
@@ -167,7 +163,7 @@ func (m *migrationTask) refreshSchema(schemaName string) error {
 
 	err = m.repo.EnsureMigrationTable()
 	if err != nil {
-		return fmt.Errorf("failed to automatically migrate migrations table: %w", err)
+		return fmt.Errorf("failed to automatically Migrate migrations table: %w", err)
 	}
 
 	return nil
