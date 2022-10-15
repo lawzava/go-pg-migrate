@@ -1,4 +1,4 @@
-package migrate // nolint:testpackage // allow direct tests
+package migrate //nolint:testpackage // allow direct tests
 
 import (
 	"errors"
@@ -90,13 +90,13 @@ func performMigrate(t *testing.T, options Options) error {
 	return nil
 }
 
-// nolint:funlen // allow longer function
+//nolint:funlen // allow longer function
 func TestMigrateErrors(t *testing.T) {
 	t.Parallel()
 
 	repo := new(mockRepository)
 
-	someErr := errors.New("test-err") // nolint:goerr113 // used for tests only
+	someErr := errors.New("test-err") //nolint:goerr113 // used for tests only
 
 	repo.On("EnsureMigrationTable").Return(someErr).Once()
 	err := performMigrateTaskWithMigrations(t, repo, Options{})
@@ -164,7 +164,7 @@ func performMigrateTask(t *testing.T, repo repository, options Options, migratio
 	t.Helper()
 
 	options.LogInfo = func(format string, args ...interface{}) {
-		// nolint:forbidigo // allow in tests
+		//nolint:forbidigo // allow in tests
 		fmt.Printf(format+"\n", args...)
 	}
 
@@ -231,11 +231,11 @@ func prepareDB() *embeddedpostgres.EmbeddedPostgres {
 		Username("migrate").
 		Password("migrate").
 		Database("migrate").
-		Version(embeddedpostgres.V13).
+		Version(embeddedpostgres.V14).
 		Port(54320))
 }
 
-// nolint:funlen // allow longer function
+//nolint:funlen // allow longer function
 func prepareMigrations() []*Migration {
 	migrations := []*Migration{
 		{

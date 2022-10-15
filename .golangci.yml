@@ -36,3 +36,4 @@ issues:
     - path: _test\.go
       linters:
         - exhaustivestruct
+        - exhaustruct
