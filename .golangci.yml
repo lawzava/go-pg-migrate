@@ -25,6 +25,7 @@ linters:
     - golint # Deprecated
     - maligned # Deprecated
     - scopelint # Deprecated
+    - depguard
 
 issues:
   exclude-rules:
