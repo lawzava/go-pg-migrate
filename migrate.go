@@ -3,15 +3,14 @@ package migrate
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
-
-	"github.com/rs/zerolog/log"
 )
 
 var errNoMigrationVersion = errors.New("migration version not found")
 
 // InfoLogger defines info level logger, passes go-sprintf-friendly format & arguments.
-type InfoLogger func(format string, args ...interface{})
+type InfoLogger func(format string, args ...any)
 
 // Options define applied migrations options and behavior.
 type Options struct {
@@ -54,16 +53,14 @@ func (m Migrate) Migrate() error {
 }
 
 // New creates new migration instance.
-//
-
 func New(opt Options) (*Migrate, error) {
 	if err := validateMigrations(migrations); err != nil {
 		return nil, err
 	}
 
 	if opt.LogInfo == nil {
-		opt.LogInfo = func(format string, args ...interface{}) {
-			log.Info().Msgf(format, args...)
+		opt.LogInfo = func(format string, args ...any) {
+			slog.Info(fmt.Sprintf(format, args...))
 		}
 	}
 

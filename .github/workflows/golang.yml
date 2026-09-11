@@ -1,29 +1,70 @@
 name: Golang
-on: [push]
-env:
-  GO111MODULE: on
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - name: Setup Go for use with actions
-        uses: actions/setup-go@v2
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
         with:
-          go-version: 1.21
-      - uses: actions/checkout@v2
-      - uses: actions/cache@v2
-        with:
-          path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go-
+          go-version: '1.26.x'
+          check-latest: true
+      - name: Verify dependencies
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+          go mod verify
       - name: Run tests
-        run: go test -race -covermode atomic -coverprofile=covprofile ./...
-      - name: Install goveralls
-        env:
-          GO111MODULE: off
-        run: go get github.com/mattn/goveralls
+        run: go test -race -count=1 -covermode=atomic -coverprofile=covprofile ./...
+      - name: Build examples
+        run: go build ./...
       - name: Send coverage
+        if: github.event_name == 'push'
+        # Coverage service availability must not block a tested release.
+        continue-on-error: true
         env:
           COVERALLS_TOKEN: ${{ secrets.COVERALLS_TOKEN }}
-        run: goveralls -coverprofile=covprofile
+        run: go run github.com/mattn/goveralls@v0.0.12 -coverprofile=covprofile
+
+  golangci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version: '1.26.x'
+          check-latest: true
+      - uses: golangci/golangci-lint-action@v9.3.0
+        with:
+          version: v2.13.2
+
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [test, golangci]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: release-v2.2.0
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: v2.2.0
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Check whether this version is already published
+        id: existing
+        continue-on-error: true
+        run: gh release view "$RELEASE_TAG"
+      - name: Publish release
+        if: steps.existing.outcome == 'failure'
+        run: gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --title "$RELEASE_TAG" --notes-file CHANGELOG.md

@@ -77,7 +77,7 @@ func mapMigrations(rawMigrations []*Migration) []*migration {
 	migrations := make([]*migration, len(rawMigrations))
 
 	for migrationIdx := range rawMigrations {
-		//nolint:exhaustivestruct,exhaustruct // ID & created_at are not used
+		//nolint:exhaustruct_v5 // ID & created_at are not used
 		migrations[migrationIdx] = &migration{
 			Name:      rawMigrations[migrationIdx].Name,
 			Number:    rawMigrations[migrationIdx].Number,
