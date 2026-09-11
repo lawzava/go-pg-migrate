@@ -51,7 +51,7 @@ func (r *repo) GetLatestMigrationNumber() (uint, error) {
 }
 
 func (r *repo) ApplyMigration(txFunc func(Tx) error) error {
-	dbTransaction, err := r.db.Begin()
+	dbTransaction, err := r.db.BeginTx(context.TODO(), nil)
 	if err != nil {
 		return fmt.Errorf("starting transaction: %w", err)
 	}

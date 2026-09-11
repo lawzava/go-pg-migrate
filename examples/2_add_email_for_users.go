@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
 	migrate "github.com/lawzava/go-pg-migrate/v2"
@@ -17,7 +18,7 @@ func init() {
 			Name:   "Add Email For Users",
 			Number: 2,
 			Up: func(tx migrate.Tx) error {
-				_, err := tx.Exec(up)
+				_, err := tx.ExecContext(context.Background(), up)
 				if err != nil {
 					return fmt.Errorf("failed to alter users table to add email: %w", err)
 				}
@@ -25,7 +26,7 @@ func init() {
 				return nil
 			},
 			Down: func(tx migrate.Tx) error {
-				_, err := tx.Exec(down)
+				_, err := tx.ExecContext(context.Background(), down)
 				if err != nil {
 					return fmt.Errorf("failed to drop email column for users table: %w", err)
 				}
