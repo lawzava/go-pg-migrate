@@ -22,8 +22,14 @@ type repo struct {
 	db *sql.DB
 }
 
-func newRepo(databaseURI string) (*repo, error) {
-	db, err := sql.Open("postgres", databaseURI)
+// newRepo adopts the caller's handle when one is supplied, and otherwise opens its own
+// connection from the database URI.
+func newRepo(opt Options) (*repo, error) {
+	if opt.DB != nil {
+		return &repo{opt.DB}, nil
+	}
+
+	db, err := sql.Open("postgres", opt.DatabaseURI)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
