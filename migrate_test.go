@@ -2,6 +2,7 @@ package migrate //nolint:testpackage // allow direct tests
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -63,6 +64,55 @@ func TestMigrate(t *testing.T) {
 
 	err = performMigrateWithMigrations(t, Options{VersionNumberToApply: 0, ForceVersionWithoutMigrations: true})
 	require.ErrorIs(t, err, errNoMigrationVersion, "Force Version Is Missing")
+
+	err = performMigrateWithInjectedDB(t)
+	require.NoError(t, err, "Migrate With Injected DB")
+}
+
+// performMigrateWithInjectedDB runs a full migration against a handle the caller opened,
+// and confirms the handle is still usable afterwards.
+func performMigrateWithInjectedDB(t *testing.T) error {
+	t.Helper()
+
+	migrations = prepareMigrations()
+
+	database, err := sql.Open("postgres", "postgres://migrate:migrate@localhost:54320/migrate?sslmode=disable")
+	require.NoError(t, err)
+
+	t.Cleanup(func() { assert.NoError(t, database.Close()) })
+
+	migrate, err := New(Options{DB: database, RefreshSchema: true})
+	require.NoError(t, err)
+
+	if err = migrate.Migrate(); err != nil {
+		return fmt.Errorf("failed to execute migration: %w", err)
+	}
+
+	// The package opened nothing here, so it must not have closed anything either.
+	if err = database.PingContext(t.Context()); err != nil {
+		return fmt.Errorf("caller's handle should outlive the migration: %w", err)
+	}
+
+	return nil
+}
+
+// TestNewWithInjectedDB pins the handle down by identity: a supplied *sql.DB is adopted
+// rather than used as a template for a second connection pool.
+func TestNewWithInjectedDB(t *testing.T) {
+	database, err := sql.Open("postgres", "postgres://migrate:migrate@localhost:54320/migrate?sslmode=disable")
+	require.NoError(t, err)
+
+	t.Cleanup(func() { assert.NoError(t, database.Close()) })
+
+	migrations = prepareMigrations()
+
+	// The URI points nowhere on purpose: if it were consulted, New would not reach this handle.
+	migrate, err := New(Options{DB: database, DatabaseURI: "postgres://localhost:1/unreachable"})
+	require.NoError(t, err)
+
+	repository, ok := migrate.task.repo.(*repo)
+	require.True(t, ok)
+	assert.Same(t, database, repository.db, "DB should take precedence over DatabaseURI")
 }
 
 func performMigrateWithMigrations(t *testing.T, options Options) error {

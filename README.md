@@ -22,7 +22,12 @@ go get github.com/lawzava/go-pg-migrate/v2
 
 Initialize the `migrate` with options payload where choices are:
 
+- `DB` an already open `*sql.DB` to run the migrations against. Useful when the application already holds a
+configured pool and would otherwise have to reconstruct a connection string for it. When set, `DatabaseURI` is
+ignored, and the handle is not closed by this package — the caller keeps ownership of its lifetime.
+
 - `DatabaseURI` database connection string. In a format of `postgres://user:password@host:port/database?sslmode=disable`.
+Ignored when `DB` is set.
 
 - `VersionNumberToApply` uint value of a migration number up to which the migrations should be applied. 
 When the requested migration number is lower than currently applied migration number it will run backward migrations, otherwise it will run forward migrations.
@@ -41,4 +46,4 @@ You will find the example in [examples](examples) directory. The example is CLI-
 
 ## Release
 
-After review and merge to `main`, CI publishes v2.2.0 once tests and lint pass. It skips publication if that release already exists. See [CHANGELOG.md](CHANGELOG.md) for release notes.
+After review and merge to `main`, CI publishes v2.3.0 once tests and lint pass. It skips publication if that release already exists. See [CHANGELOG.md](CHANGELOG.md) for release notes.

@@ -1,6 +1,7 @@
 package migrate
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -14,7 +15,13 @@ type InfoLogger func(format string, args ...any)
 
 // Options define applied migrations options and behavior.
 type Options struct {
+	// DB is an already open database handle to run the migrations against. When it is set,
+	// DatabaseURI is ignored. The handle is never closed by this package, so callers that
+	// supply one keep ownership of its lifetime.
+	DB *sql.DB
+
 	// DatabaseURI is the database connection string. Format 'postgres://user:password@host:port/database?sslmode=disable'.
+	// Ignored when DB is set.
 	DatabaseURI string
 
 	// VersionNumberToApply defines target version for migration actions.
@@ -64,7 +71,7 @@ func New(opt Options) (*Migrate, error) {
 		}
 	}
 
-	repo, err := newRepo(opt.DatabaseURI)
+	repo, err := newRepo(opt)
 	if err != nil {
 		return nil, err
 	}
