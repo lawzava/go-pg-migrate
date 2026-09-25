@@ -1,10 +1,8 @@
-# v2.2.0
+# v2.3.0
 
-- Require Go 1.26 or later.
-- Replace zerolog with standard-library `log/slog`. Default output follows the application's default slog handler. `Options.LogInfo` keeps its printf-style callback contract.
-- Update all Go module dependencies to their latest available versions.
-- Upgrade golangci-lint to v2.13.2 and migrate its configuration to v2.
-- Update GitHub Actions and run tests, race detection, dependency checks, and lint on pull requests.
-- Isolate PostgreSQL test runtime files and serialize tests that share the migration registry.
+- Add `Options.DB` so callers can run migrations against a `*sql.DB` they already hold, instead of
+  supplying a connection string for this package to open. `Options.DatabaseURI` is ignored when
+  `Options.DB` is set, and a caller-supplied handle is never closed by this package.
 
-The module path remains `github.com/lawzava/go-pg-migrate/v2`. Existing migration APIs remain compatible.
+The module path remains `github.com/lawzava/go-pg-migrate/v2`. Existing migration APIs remain compatible,
+and `Options.DatabaseURI` behaves exactly as before when `Options.DB` is unset.
