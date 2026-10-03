@@ -46,4 +46,4 @@ You will find the example in [examples](examples) directory. The example is CLI-
 
 ## Release
 
-After review and merge to `main`, CI publishes v2.3.0 once tests and lint pass. It skips publication if that release already exists. See [CHANGELOG.md](CHANGELOG.md) for release notes.
+After review and merge to `main`, CI publishes the version set in `RELEASE_TAG` in [`.github/workflows/golang.yml`](.github/workflows/golang.yml) once tests and lint pass. It skips publication if that release already exists. See [CHANGELOG.md](CHANGELOG.md) for release notes.
