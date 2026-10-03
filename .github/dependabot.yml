@@ -1,0 +1,11 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  # The root module has no dependencies; only the test module does.
+  - package-ecosystem: gomod
+    directory: /integration
+    schedule:
+      interval: weekly
