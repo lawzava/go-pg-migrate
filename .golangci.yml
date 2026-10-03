@@ -1,4 +1,8 @@
 version: "2"
+run:
+  # Paths in exclusions are relative to this file, so the nested integration
+  # module can be linted with `--config ../.golangci.yml`.
+  relative-path-mode: cfg
 linters:
   default: all
   disable:
@@ -6,6 +10,7 @@ linters:
     - exhaustruct # Replaced by exhaustruct_v5.
     - gomodguard # Replaced by gomodguard_v2.
     - noinlineerr # Keep the existing inline error handling convention.
+    - testpackage # Tests exercise unexported planning and ledger code.
     - wsl # Replaced by wsl_v5.
   settings:
     gocritic:
@@ -15,10 +20,22 @@ linters:
         - opinionated
         - performance
         - style
+    gomoddirectives:
+      replace-local: true # integration/go.mod tests the working tree.
     misspell:
       locale: US
     nakedret:
       max-func-lines: 2
+    tagliatelle:
+      case:
+        rules:
+          json: snake
+    varnamelen:
+      ignore-names: [db, tx, fn, i, m, tb, tt, wg]
+    wrapcheck:
+      # Callers wrap migration errors with version and name.
+      ignore-interface-regexps: ['^Executor$']
+      ignore-package-globs: ['github.com/lawzava/go-pg-migrate/v3*']
   exclusions:
     generated: lax
     presets:
@@ -28,16 +45,20 @@ linters:
       - std-error-handling
     rules:
       - linters:
-          - gochecknoglobals
-          - gochecknoinits # Examples register migrations during initialization.
-          - mnd
-          - varnamelen
-        path: examples/*
-      - linters:
+          - cyclop # Scenario tests check several states in sequence.
           - exhaustruct_v5
+          - funlen # Same reason as cyclop.
           - goconst
-          - paralleltest # Tests use the global migration registry and default logger.
+          - lll # Table-driven cases read best one per line.
+          - mnd
+          - thelper # eachDriver callbacks are test bodies, not helpers.
         path: _test\.go
+      - linters:
+          - err113 # The example CLI reports usage errors directly.
+          - exhaustruct_v5 # Examples show the zero-value Config and optional fields as users write them.
+          - gochecknoglobals # Migration lists and driver lists are package data.
+          - mnd # Migration versions are literal numbers.
+        path: integration/
     paths:
       - third_party$
       - builtin$
@@ -52,7 +73,7 @@ formatters:
         group-params: true
     goimports:
       local-prefixes:
-        - github.com/lawzava/go-pg-migrate/v2
+        - github.com/lawzava/go-pg-migrate/v3
   exclusions:
     generated: lax
     paths:

@@ -1,90 +1,87 @@
 package migrate
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
-	"time"
 )
 
-type Tx struct {
-	*sql.Tx
+// Executor runs SQL. Migrations receive a *sql.Tx, or a *sql.Conn when NoTx is
+// set. It deliberately has no Commit or Rollback: the Migrator owns the
+// transaction so the ledger row commits together with the schema change.
+type Executor interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
-// Migration defines a single version of a migration to run.
+// Func is one direction of a migration.
+type Func func(ctx context.Context, db Executor) error
+
+// Migration is one versioned schema change.
 type Migration struct {
-	Name   string
-	Number uint
+	// Version orders migrations. It must be positive and unique. Sequential
+	// numbers and timestamps such as 20261003120000 both work.
+	Version int64
 
-	Up   func(tx Tx) error
-	Down func(tx Tx) error
+	// Name describes the change for logs and the ledger.
+	Name string
+
+	// Up applies the change. It is required.
+	Up Func
+
+	// Down reverts the change. Leave it nil for an irreversible migration;
+	// Migrator.Down then refuses to roll back through it.
+	Down Func
+
+	// NoTx runs Up and Down outside a transaction, for statements such as
+	// CREATE INDEX CONCURRENTLY. Keep each NoTx migration to one statement:
+	// a failure leaves the version dirty until Migrator.Resolve is called.
+	NoTx bool
 }
 
-//nolint:gochecknoglobals // allow global var as it's short-lived
-var migrations []*Migration
+// SQL returns a Func that executes query without arguments. Without arguments,
+// both lib/pq and pgx accept several statements separated by semicolons.
+func SQL(query string) Func {
+	return func(ctx context.Context, db Executor) error {
+		_, err := db.ExecContext(ctx, query)
 
-type migration struct {
-	ID        uint
-	CreatedAt time.Time
-	Name      string
-	Number    uint
-
-	Forwards  func(tx Tx) error `pg:"-"`
-	Backwards func(tx Tx) error `pg:"-"`
+		return err
+	}
 }
 
-var (
-	errDuplicateMigrationVersion  = errors.New("duplicate migration version is not allowed")
-	errMigrationIsMissing         = errors.New("migration is missing")
-	errMigrationNameCannotBeEmpty = errors.New("migration name cannot be empty")
-)
+// Validate reports every problem in migrations: non-positive or duplicate
+// versions, empty names, and missing Up functions. New calls it; call it
+// directly to check migrations in CI without a database.
+func Validate(migrations []Migration) error {
+	var errs []error
 
-func AddMigration(m *Migration) {
-	migrations = append(migrations, m)
-}
+	seen := make(map[int64]string, len(migrations))
 
-func validateMigrations(migrations []*Migration) error {
-	for migrationIdx := range migrations {
-		for migrationSecondaryIdx := range migrations {
-			if migrationIdx != migrationSecondaryIdx &&
-				migrations[migrationIdx].Number == migrations[migrationSecondaryIdx].Number {
-				return fmt.Errorf("%s (%d) and %s (%d) have duplicate numbers: %w",
-					migrations[migrationIdx].Name, migrations[migrationIdx].Number,
-					migrations[migrationSecondaryIdx].Name, migrations[migrationSecondaryIdx].Number,
-					errDuplicateMigrationVersion)
-			}
+	for _, mig := range migrations {
+		invalid := func(reason string) {
+			errs = append(errs, fmt.Errorf("%w: version %d (%q): %s", ErrInvalidMigration, mig.Version, mig.Name, reason))
 		}
 
-		if migrations[migrationIdx].Name == "" {
-			return fmt.Errorf("%s (%d) name cannot be empty: %w",
-				migrations[migrationIdx].Name, migrations[migrationIdx].Number,
-				errMigrationNameCannotBeEmpty,
-			)
+		if mig.Version <= 0 {
+			invalid("version must be positive")
 		}
 
-		if migrations[migrationIdx].Up == nil && migrations[migrationIdx].Down == nil {
-			return fmt.Errorf("%s (%d) at least one migration specification is required: %w",
-				migrations[migrationIdx].Name, migrations[migrationIdx].Number,
-				errMigrationIsMissing,
-			)
+		if mig.Name == "" {
+			invalid("name is empty")
 		}
+
+		if mig.Up == nil {
+			invalid("Up is nil")
+		}
+
+		if other, ok := seen[mig.Version]; ok {
+			invalid(fmt.Sprintf("duplicates version of %q", other))
+		}
+
+		seen[mig.Version] = mig.Name
 	}
 
-	return nil
-}
-
-func mapMigrations(rawMigrations []*Migration) []*migration {
-	migrations := make([]*migration, len(rawMigrations))
-
-	for migrationIdx := range rawMigrations {
-		//nolint:exhaustruct_v5 // ID & created_at are not used
-		migrations[migrationIdx] = &migration{
-			Name:      rawMigrations[migrationIdx].Name,
-			Number:    rawMigrations[migrationIdx].Number,
-			Forwards:  rawMigrations[migrationIdx].Up,
-			Backwards: rawMigrations[migrationIdx].Down,
-		}
-	}
-
-	return migrations
+	return errors.Join(errs...)
 }

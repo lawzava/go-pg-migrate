@@ -3,68 +3,127 @@ name: Golang
 on:
   push:
     branches: [main]
+    tags: ['v3.*']
   pull_request:
 
 permissions:
   contents: read
 
 jobs:
-  test:
+  unit:
+    strategy:
+      matrix:
+        go: ['1.25.x', 'stable'] # Oldest supported and latest.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: actions/setup-go@v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.x'
+          go-version: ${{ matrix.go }}
           check-latest: true
-      - name: Verify dependencies
+      - name: Check modules are tidy
         run: |
           go mod tidy
-          git diff --exit-code -- go.mod go.sum
-          go mod verify
-      - name: Run tests
-        run: go test -race -count=1 -covermode=atomic -coverprofile=covprofile ./...
-      - name: Build examples
-        run: go build ./...
+          go -C integration mod tidy
+          git diff --exit-code
+      - name: Check the root module uses only the standard library
+        run: |
+          deps=$(go list -deps -test -f '{{if not .Standard}}{{.ImportPath}}{{end}}' ./... | grep -v '^github.com/lawzava/go-pg-migrate/v3' || true)
+          if [ -n "$deps" ]; then printf 'non-standard dependencies:\n%s\n' "$deps"; exit 1; fi
+      - run: go vet ./...
+      - run: go test -race -count=1 ./...
+
+  integration:
+    strategy:
+      fail-fast: false
+      matrix:
+        postgres: ['14', '18'] # Oldest supported and latest.
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:${{ matrix.postgres }}
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 2s --health-timeout 5s --health-retries 15
+    env:
+      PGM_TEST_DSN: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          check-latest: true
+      - name: Run integration tests with lib/pq and pgx
+        working-directory: integration
+        run: >-
+          go test -race -count=1 -covermode=atomic
+          -coverpkg=github.com/lawzava/go-pg-migrate/v3/...
+          -coverprofile=covprofile ./...
       - name: Send coverage
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && matrix.postgres == '18'
         # Coverage service availability must not block a tested release.
         continue-on-error: true
+        working-directory: integration
         env:
           COVERALLS_TOKEN: ${{ secrets.COVERALLS_TOKEN }}
         run: go run github.com/mattn/goveralls@v0.0.12 -coverprofile=covprofile
 
   golangci:
+    strategy:
+      matrix:
+        module: ['.', 'integration']
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
-      - uses: actions/setup-go@v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26.x'
+          go-version: stable
           check-latest: true
-      - uses: golangci/golangci-lint-action@v9.3.0
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version: v2.13.2
+          working-directory: ${{ matrix.module }}
+          args: --config=${{ github.workspace }}/.golangci.yml
 
+  # Pushing a signed, annotated v3.x.y tag publishes a release whose notes are
+  # the tag message. Creating a release that already exists fails the job.
   release:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [test, golangci]
+    if: startsWith(github.ref, 'refs/tags/v3.')
+    needs: [unit, integration, golangci]
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    concurrency:
-      group: release-v2.2.0
-      cancel-in-progress: false
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
-      RELEASE_TAG: v2.2.0
     steps:
-      - uses: actions/checkout@v7.0.1
-      - name: Check whether this version is already published
-        id: existing
-        continue-on-error: true
-        run: gh release view "$RELEASE_TAG"
-      - name: Publish release
-        if: steps.existing.outcome == 'failure'
-        run: gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" --title "$RELEASE_TAG" --notes-file CHANGELOG.md
+      - run: gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --notes-from-tag
+
+  smoke:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          check-latest: true
+      - name: Build against the published module
+        run: |
+          mkdir smoke && cd smoke
+          go mod init smoke
+          cat > main.go <<'EOF'
+          package main
+
+          import migrate "github.com/lawzava/go-pg-migrate/v3"
+
+          func main() {
+          	if err := migrate.Validate([]migrate.Migration{{Version: 1, Name: "a", Up: migrate.SQL("SELECT 1")}}); err != nil {
+          		panic(err)
+          	}
+          }
+          EOF
+          go get "github.com/lawzava/go-pg-migrate/v3@$GITHUB_REF_NAME"
+          go run .
+          go list -m github.com/lawzava/go-pg-migrate/v3
