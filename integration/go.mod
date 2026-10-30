@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/fergusstrange/embedded-postgres v1.34.0
-	github.com/jackc/pgx/v5 v5.10.0
+	github.com/jackc/pgx/v5 v5.11.0
 	github.com/lawzava/go-pg-migrate/v3 v3.0.0
 	github.com/lib/pq v1.12.3
 )
