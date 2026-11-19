@@ -32,9 +32,12 @@ type Config struct {
 	Table string
 
 	// LockTimeout bounds each wait for a table lock inside a migration, so a
-	// blocked ALTER fails instead of queueing every reader behind it.
+	// blocked ALTER fails instead of queueing every reader behind it. It also
+	// bounds each wait for a lock on the ledger when a call creates it,
+	// upgrades it from v2, reads it, or writes to it in a transaction.
 	// Default 5s. Negative disables it. It is set for each migration and
-	// overrides a lock_timeout set on the database or role.
+	// overrides a lock_timeout set on the database or role. It does not bound
+	// the wait for another runner.
 	LockTimeout time.Duration
 
 	// StatementTimeout bounds each statement inside a migration. Zero keeps
@@ -359,21 +362,25 @@ func (m *Migrator) inLockedTx(ctx context.Context, fn func(*sql.Tx, map[int64]re
 		return err
 	}
 
-	if err := m.ledger.ensure(ctx, tx); err != nil {
+	// From here to the commit, Config.LockTimeout bounds each wait for a lock:
+	// the creation or upgrade of the ledger, its read, and its writes. The
+	// wait for the migration lock above has no bound, so that a runner waits
+	// for another one.
+	if err := m.ledger.ensure(ctx, tx, m.config.LockTimeout); err != nil {
 		return err
 	}
 
 	history, err := m.ledger.read(ctx, tx, shapeV3)
 	if err != nil {
-		return err
+		return wrapLockTimeout(err)
 	}
 
 	if err := fn(tx, history); err != nil {
-		return err
+		return wrapLockTimeout(err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit: %w", err)
+		return fmt.Errorf("commit: %w", wrapLockTimeout(err))
 	}
 
 	return nil
@@ -400,10 +407,16 @@ func (m *Migrator) applyNoTx(ctx context.Context, mig Migration, dir direction, 
 
 	defer m.releaseSession(ctx, conn)
 
+	// As in inLockedTx, the lock timeout starts once the migration lock is
+	// held. It is set on the session, which releaseSession discards.
+	if err := setTimeouts(ctx, conn, m.config.LockTimeout, 0, false); err != nil {
+		return err
+	}
+
 	// Another runner may have moved the ledger while this one waited.
 	history, err := m.ledger.read(ctx, conn, shapeV3)
 	if err != nil {
-		return err
+		return wrapLockTimeout(err)
 	}
 
 	steps, err := plan(history)
@@ -412,7 +425,7 @@ func (m *Migrator) applyNoTx(ctx context.Context, mig Migration, dir direction, 
 	}
 
 	if err := m.runNoTx(ctx, conn, mig, dir); err != nil {
-		return err
+		return wrapLockTimeout(err)
 	}
 
 	m.logApplied(ctx, mig, dir, lockWait, time.Since(started))

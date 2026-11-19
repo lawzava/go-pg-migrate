@@ -1,3 +1,20 @@
+# v3.1.1
+
+## Fixes
+
+- `Config.LockTimeout` now also bounds the waits for a lock on the ledger
+  table. Before, the creation of the ledger, the upgrade of a v2 ledger, the
+  read of the ledger, and the writes of `Baseline` and `Resolve` ran before
+  any `lock_timeout` was set. If another session held a conflicting lock on
+  the ledger, `Up`, `UpTo`, `Down`, `Baseline`, and `Resolve` waited without a
+  bound. They now return `ErrLockTimeout` after `LockTimeout`, 5 s by default,
+  and the transaction that timed out is rolled back. The same holds for the read of the ledger before a
+  `NoTx` migration.
+
+  A runner still waits for another runner without a bound: the timeout starts
+  after the migration lock is held. `Config.StatementTimeout` still applies
+  only inside a migration. `Status` does not change.
+
 # v3.1.0
 
 ## New

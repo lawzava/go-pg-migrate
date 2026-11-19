@@ -118,9 +118,28 @@ func (l ledger) lock(ctx context.Context, tx *sql.Tx) error {
 
 // ensure creates the ledger, or upgrades a v2 ledger in place. The caller holds
 // the lock.
-func (l ledger) ensure(ctx context.Context, tx *sql.Tx) error {
+//
+// It sets lockTimeout for the rest of the transaction, so that DDL on a ledger
+// that another session has locked fails instead of waiting without a bound.
+// PostgreSQL applies lock_timeout to advisory locks too, and one runner must
+// wait for another for as long as it takes. The timeout is therefore set only
+// after the last advisory lock is held: the caller's, and the schema lock.
+// Only the statements after that point report ErrLockTimeout. A lock_timeout
+// of the server or the connection can still end an advisory wait; that error
+// is returned as it is, as for the migration lock.
+func (l ledger) ensure(ctx context.Context, tx *sql.Tx, lockTimeout time.Duration) error {
 	shape, err := l.shape(ctx, tx)
 	if err != nil {
+		return err
+	}
+
+	if shape == shapeMissing {
+		if err := l.ensureSchema(ctx, tx, lockTimeout); err != nil {
+			return err
+		}
+	}
+
+	if err := setTimeouts(ctx, tx, lockTimeout, 0, true); err != nil {
 		return err
 	}
 
@@ -132,17 +151,13 @@ func (l ledger) ensure(ctx context.Context, tx *sql.Tx) error {
 	case shapeMissing:
 	}
 
-	if err := l.ensureSchema(ctx, tx); err != nil {
-		return err
-	}
-
 	if _, err := tx.ExecContext(ctx, `CREATE TABLE `+l.name+` (
 		version BIGINT PRIMARY KEY,
 		name TEXT NOT NULL,
 		applied_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 		dirty BOOLEAN NOT NULL DEFAULT false
 	)`); err != nil {
-		return fmt.Errorf("create ledger %s: %w", l.name, err)
+		return fmt.Errorf("create ledger %s: %w", l.name, wrapLockTimeout(err))
 	}
 
 	return nil
@@ -150,7 +165,8 @@ func (l ledger) ensure(ctx context.Context, tx *sql.Tx) error {
 
 // ensureSchema creates the ledger schema if it is missing. Ledgers sharing a
 // schema hold different locks, so creation takes a schema lock and rechecks.
-func (l ledger) ensureSchema(ctx context.Context, tx *sql.Tx) error {
+// The wait for that lock has no bound; lockTimeout applies from CREATE SCHEMA.
+func (l ledger) ensureSchema(ctx context.Context, tx *sql.Tx, lockTimeout time.Duration) error {
 	exists := func() (bool, error) {
 		var found bool
 
@@ -177,8 +193,12 @@ func (l ledger) ensureSchema(ctx context.Context, tx *sql.Tx) error {
 		return err
 	}
 
+	if err := setTimeouts(ctx, tx, lockTimeout, 0, true); err != nil {
+		return err
+	}
+
 	if _, err := tx.ExecContext(ctx, "CREATE SCHEMA "+quoteIdent(l.schema)); err != nil {
-		return fmt.Errorf("create schema %s: %w", quoteIdent(l.schema), err)
+		return fmt.Errorf("create schema %s: %w", quoteIdent(l.schema), wrapLockTimeout(err))
 	}
 
 	return nil
@@ -215,7 +235,7 @@ func (l ledger) upgradeV2(ctx context.Context, tx *sql.Tx) error {
 
 	for _, statement := range statements {
 		if _, err := tx.ExecContext(ctx, statement); err != nil {
-			return fmt.Errorf("upgrade v2 ledger %s: %w", l.name, err)
+			return fmt.Errorf("upgrade v2 ledger %s: %w", l.name, wrapLockTimeout(err))
 		}
 	}
 
@@ -346,10 +366,11 @@ func milliseconds(d time.Duration) string {
 }
 
 // wrapLockTimeout marks PostgreSQL lock_not_available (55P03) errors with
-// ErrLockTimeout. lib/pq and pgx errors both expose SQLState.
+// ErrLockTimeout. lib/pq and pgx errors both expose SQLState. An error that
+// is already marked is returned as it is.
 func wrapLockTimeout(err error) error {
 	var state interface{ SQLState() string }
-	if errors.As(err, &state) && state.SQLState() == "55P03" {
+	if !errors.Is(err, ErrLockTimeout) && errors.As(err, &state) && state.SQLState() == "55P03" {
 		return fmt.Errorf("%w: %w", ErrLockTimeout, err)
 	}
 
