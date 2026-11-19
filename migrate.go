@@ -33,7 +33,8 @@ type Config struct {
 
 	// LockTimeout bounds each wait for a table lock inside a migration, so a
 	// blocked ALTER fails instead of queueing every reader behind it.
-	// Default 5s. Negative disables it.
+	// Default 5s. Negative disables it. It is set for each migration and
+	// overrides a lock_timeout set on the database or role.
 	LockTimeout time.Duration
 
 	// StatementTimeout bounds each statement inside a migration. Zero keeps

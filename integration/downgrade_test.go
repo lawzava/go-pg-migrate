@@ -80,7 +80,7 @@ func TestDowngradeToV2Script(t *testing.T) {
 
 	script := string(content)
 
-	// The two shapes a v3 ledger can have, with the constraints each starts
+	// The shapes a v3 ledger can have, with the constraints each starts
 	// with. Both hold versions 1, 2, and 3.
 	shapes := []struct {
 		name        string
@@ -113,6 +113,19 @@ func TestDowngradeToV2Script(t *testing.T) {
 				if err := newMigrator(t, db, tables(1, 2, 3), migrate.Config{}).Up(t.Context()); err != nil {
 					t.Fatal(err)
 				}
+			},
+			constraints: "migrations_pkey PRIMARY KEY (version)",
+		},
+		{
+			// v3.0.x kept the unique constraint of v2 when it upgraded a
+			// ledger, and later versions do not remove it.
+			name: "upgraded from v2 by v3.0",
+			setup: func(t *testing.T, db *sql.DB) {
+				if err := newMigrator(t, db, tables(1, 2, 3), migrate.Config{}).Up(t.Context()); err != nil {
+					t.Fatal(err)
+				}
+
+				exec(t, db, "ALTER TABLE public.migrations ADD CONSTRAINT migrations_number_key UNIQUE (version)")
 			},
 			constraints: "migrations_number_key UNIQUE (version), migrations_pkey PRIMARY KEY (version)",
 		},
@@ -155,7 +168,7 @@ func TestDowngradeToV2Script(t *testing.T) {
 				check(t, "columns after upgrading again", ledgerColumns(t, db),
 					"applied_at timestamp with time zone NOT NULL, dirty boolean NOT NULL, name text NOT NULL, version bigint NOT NULL")
 				check(t, "constraints after upgrading again", ledgerConstraints(t, db),
-					"migrations_number_key UNIQUE (version), migrations_pkey PRIMARY KEY (version)")
+					"migrations_pkey PRIMARY KEY (version)")
 			})
 		})
 	}

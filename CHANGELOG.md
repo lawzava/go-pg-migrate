@@ -23,6 +23,14 @@
 - [docs/downgrade-to-v2.sql](docs/downgrade-to-v2.sql) converts a v3 ledger
   back to the v2 table, to roll back to an image that still runs v2.
 
+## Changed
+
+- The upgrade of a v2 ledger now drops the unique constraint that v2 put on
+  `number`. The primary key on `version` already covers it, so an upgraded
+  ledger now has the same constraints as a new one. A ledger that v3.0
+  upgraded keeps the constraint, normally `migrations_number_key`. It is
+  harmless, and this release does not remove it.
+
 # v3.0.0
 
 v3 is a rewrite that fixes how v2 applied, recorded, and rolled back
@@ -141,6 +149,8 @@ regression test.
      session time zone.
    - `name` becomes `TEXT`.
    - `id` is dropped, and a `dirty` column is added.
+   - Since v3.1.0, the unique constraint on `number` is dropped. The primary
+     key on `version` replaces it.
 
    `Status` reads a v2 table without changing it. v2 cannot read the upgraded
    table. To roll back to a v2 image, convert the table back with
@@ -160,5 +170,7 @@ regression test.
 - A pending migration older than the newest applied one returns
   `ErrOutOfOrder` unless `Config.AllowOutOfOrder` is set.
 - Migrations wait at most 5 s for a table lock by default. Raise
-  `Config.LockTimeout`, or set it negative to disable it.
+  `Config.LockTimeout`, or set it negative to disable it. The value is set for
+  each migration, so it overrides a `lock_timeout` set on the database or
+  role.
 - `Version` must be positive and `Up` is required.

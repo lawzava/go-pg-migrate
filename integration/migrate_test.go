@@ -677,6 +677,9 @@ func TestUpgradesV2Ledger(t *testing.T) {
 			"applied_at:timestamp with time zone,dirty:boolean,name:text,version:bigint")
 		check(t, "applied_at kept", queryString(t, db,
 			"SELECT to_char(applied_at, 'YYYY-MM-DD') FROM public.migrations WHERE version = 1"), "2024-01-02")
+		// The unique constraint of v2 on number would only duplicate the
+		// primary key, so the upgrade drops it.
+		check(t, "constraints", ledgerConstraints(t, db), "migrations_pkey PRIMARY KEY (version)")
 	})
 }
 
