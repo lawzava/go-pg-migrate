@@ -1,3 +1,28 @@
+# v3.1.0
+
+## New
+
+- `Config.AllowUnknownVersions` lets a run continue when the ledger holds
+  applied versions that the code does not contain. Set it for a service that
+  migrates at boot, so that an older image starts against a newer ledger, for
+  example after an image rollback.
+  - `Up` and `UpTo` apply the known pending migrations and leave the unknown
+    rows untouched.
+  - `Down` leaves unknown versions at or below its target untouched. It still
+    returns `ErrUnknownVersion` if one lies above the target, because it has
+    no `Down` to run for it.
+  - A dirty version, known or unknown, still returns `ErrDirty`.
+  - Unknown versions still count as applied history. A pending migration older
+    than one returns `ErrOutOfOrder` unless `Config.AllowOutOfOrder` is also
+    set.
+  - `Baseline`, `Resolve`, and `Status` do not change.
+  - Each call that passes unknown versions logs them once at warn level.
+
+  The default is unchanged: an unknown applied version returns
+  `ErrUnknownVersion`.
+- [docs/downgrade-to-v2.sql](docs/downgrade-to-v2.sql) converts a v3 ledger
+  back to the v2 table, to roll back to an image that still runs v2.
+
 # v3.0.0
 
 v3 is a rewrite that fixes how v2 applied, recorded, and rolled back
@@ -118,13 +143,20 @@ regression test.
    - `id` is dropped, and a `dirty` column is added.
 
    `Status` reads a v2 table without changing it. v2 cannot read the upgraded
-   table.
+   table. To roll back to a v2 image, convert the table back with
+   [docs/downgrade-to-v2.sql](docs/downgrade-to-v2.sql). Stop every v3 runner
+   first. The script needs a ledger with no dirty rows, versions from 1 to
+   2147483647, and names of at most 255 characters. It checks these and
+   changes nothing if one fails.
 
 ## Behavior changes to check
 
 - A database with applied versions that the code does not contain now returns
   `ErrUnknownVersion`. v2 silently did nothing. Run migrations as a deploy
   step before new code starts, so an older release never meets a newer ledger.
+  A service that migrates at boot can set `Config.AllowUnknownVersions`
+  (v3.1.0) instead: `Up` then applies what it knows and leaves the unknown
+  versions alone.
 - A pending migration older than the newest applied one returns
   `ErrOutOfOrder` unless `Config.AllowOutOfOrder` is set.
 - Migrations wait at most 5 s for a table lock by default. Raise

@@ -44,6 +44,28 @@ type Config struct {
 	// version instead of returning ErrOutOfOrder.
 	AllowOutOfOrder bool
 
+	// AllowUnknownVersions lets a run continue when the ledger holds applied
+	// versions that have no migration in code. It is meant for a service that
+	// migrates at boot and may run an older image against a newer ledger, for
+	// example after an image rollback. By default such a ledger returns
+	// ErrUnknownVersion.
+	//
+	//   - Up and UpTo apply the known pending migrations and leave the unknown
+	//     rows untouched.
+	//   - Down leaves unknown versions at or below its target untouched. It
+	//     still returns ErrUnknownVersion if one lies above the target, because
+	//     it has no Down to run for it.
+	//   - A dirty version, known or unknown, still returns ErrDirty.
+	//   - Unknown versions still count as applied history for the order check.
+	//     A pending migration older than one returns ErrOutOfOrder unless
+	//     AllowOutOfOrder is also set.
+	//   - Baseline, Resolve, and Status do not change. Baseline still needs an
+	//     empty ledger, and Resolve already accepts any dirty version.
+	//
+	// Each Up, UpTo, or Down call that passes unknown versions logs them once
+	// at warn level.
+	AllowUnknownVersions bool
+
 	// Logger receives one event per applied or reverted migration.
 	// Default slog.Default().
 	Logger *slog.Logger
@@ -109,10 +131,21 @@ func (m *Migrator) UpTo(ctx context.Context, version int64) error {
 
 // Down reverts applied migrations newer than version, newest first. Zero
 // reverts everything. It checks the whole path first and reverts nothing if
-// any migration on it lacks Down.
+// any migration on it lacks Down. An applied version without a migration in
+// code returns ErrUnknownVersion; with Config.AllowUnknownVersions, only one
+// above version does.
 func (m *Migrator) Down(ctx context.Context, version int64) error {
+	warn := m.unknownWarner(ctx, directionDown)
+
 	return m.run(ctx, directionDown, func(history map[int64]record) ([]Migration, error) {
-		return planDown(m.migrations, history, version)
+		steps, unknown, err := planDown(m.migrations, history, version, m.planOptions())
+		if err != nil {
+			return nil, err
+		}
+
+		warn(unknown)
+
+		return steps, nil
 	})
 }
 
@@ -200,9 +233,46 @@ func (d direction) fn(mig Migration) Func {
 type planFunc func(history map[int64]record) ([]Migration, error)
 
 func (m *Migrator) up(ctx context.Context, target int64) error {
+	warn := m.unknownWarner(ctx, directionUp)
+
 	return m.run(ctx, directionUp, func(history map[int64]record) ([]Migration, error) {
-		return planUp(m.migrations, history, target, m.config.AllowOutOfOrder)
+		steps, unknown, err := planUp(m.migrations, history, target, m.planOptions())
+		if err != nil {
+			return nil, err
+		}
+
+		warn(unknown)
+
+		return steps, nil
 	})
+}
+
+func (m *Migrator) planOptions() planOptions {
+	return planOptions{
+		allowOutOfOrder:      m.config.AllowOutOfOrder,
+		allowUnknownVersions: m.config.AllowUnknownVersions,
+	}
+}
+
+// unknownWarner returns a function that logs the unknown versions a plan
+// passed, the first time it gets any. Make one per Up, UpTo, or Down call: run
+// plans again for every step, and the state must not be shared between
+// concurrent calls.
+func (m *Migrator) unknownWarner(ctx context.Context, dir direction) func(unknown []int64) {
+	warned := false
+
+	return func(unknown []int64) {
+		if warned || len(unknown) == 0 {
+			return
+		}
+
+		warned = true
+
+		m.log.WarnContext(ctx, "applied versions have no migration in code and are left untouched",
+			slog.Any("versions", unknown),
+			slog.String("direction", string(dir)),
+		)
+	}
 }
 
 // run applies a plan one migration per transaction. Each transaction takes the

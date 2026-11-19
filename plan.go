@@ -15,9 +15,11 @@ type record struct {
 	dirty     bool
 }
 
-// checkHistory rejects ledgers that no plan can safely build on. known must be
-// sorted by version.
-func checkHistory(known []Migration, history map[int64]record) error {
+// checkHistory rejects ledgers that no plan can safely build on: any dirty
+// version, and any applied version with no migration in known unless
+// allowUnknown is set. It then returns those unknown versions, sorted. Dirty
+// wins over unknown. known must be sorted by version.
+func checkHistory(known []Migration, history map[int64]record, allowUnknown bool) ([]int64, error) {
 	var dirty, unknown []int64
 
 	for version, rec := range history {
@@ -33,25 +35,56 @@ func checkHistory(known []Migration, history map[int64]record) error {
 	if len(dirty) > 0 {
 		slices.Sort(dirty)
 
-		return fmt.Errorf("%w: versions %v", ErrDirty, dirty)
+		return nil, fmt.Errorf("%w: versions %v", ErrDirty, dirty)
 	}
 
-	if len(unknown) > 0 {
-		slices.Sort(unknown)
+	slices.Sort(unknown)
 
-		return fmt.Errorf("%w: versions %v", ErrUnknownVersion, unknown)
+	if len(unknown) > 0 && !allowUnknown {
+		return nil, fmt.Errorf("%w: versions %v", ErrUnknownVersion, unknown)
 	}
 
-	return nil
+	return unknown, nil
 }
 
-// planUp returns the migrations to apply, oldest first, to reach target.
-// It never plans a rollback: versions above target are left alone.
-func planUp(known []Migration, history map[int64]record, target int64, allowOutOfOrder bool) ([]Migration, error) {
-	if err := checkHistory(known, history); err != nil {
+// checkDownHistory is checkHistory for a rollback to target. An unknown version
+// above target has no Down to run, so it fails even when unknown versions are
+// allowed.
+func checkDownHistory(known []Migration, history map[int64]record, target int64, allowUnknown bool) ([]int64, error) {
+	unknown, err := checkHistory(known, history, allowUnknown)
+	if err != nil {
 		return nil, err
 	}
 
+	// unknown is sorted, so the versions above target are its tail.
+	above := slices.IndexFunc(unknown, func(version int64) bool { return version > target })
+	if above >= 0 {
+		return nil, fmt.Errorf("%w: versions %v are above target %d and cannot be reverted",
+			ErrUnknownVersion, unknown[above:], target)
+	}
+
+	return unknown, nil
+}
+
+// planOptions carries the Config fields that change planning.
+type planOptions struct {
+	allowOutOfOrder      bool
+	allowUnknownVersions bool
+}
+
+// planUp returns the migrations to apply, oldest first, to reach target.
+// It never plans a rollback: versions above target are left alone. It also
+// returns the unknown applied versions that allowUnknownVersions let it pass.
+func planUp(
+	known []Migration, history map[int64]record, target int64, opts planOptions,
+) ([]Migration, []int64, error) {
+	unknown, err := checkHistory(known, history, opts.allowUnknownVersions)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Unknown versions are part of the database's history, so they count
+	// here. The order check stays the business of allowOutOfOrder alone.
 	var newest int64
 	for version := range history {
 		newest = max(newest, version)
@@ -78,23 +111,29 @@ func planUp(known []Migration, history map[int64]record, target int64, allowOutO
 		plan = append(plan, mig)
 	}
 
-	if len(outOfOrder) > 0 && !allowOutOfOrder {
-		return nil, fmt.Errorf("%w: versions %v are pending below applied version %d", ErrOutOfOrder, outOfOrder, newest)
+	if len(outOfOrder) > 0 && !opts.allowOutOfOrder {
+		return nil, nil, fmt.Errorf("%w: versions %v are pending below applied version %d",
+			ErrOutOfOrder, outOfOrder, newest)
 	}
 
-	return plan, nil
+	return plan, unknown, nil
 }
 
 // planDown returns the migrations to revert, newest first, to reach target.
 // Zero reverts everything. It checks the whole path before returning, so a
-// rollback never stops halfway at an irreversible migration.
-func planDown(known []Migration, history map[int64]record, target int64) ([]Migration, error) {
+// rollback never stops halfway at an irreversible migration. It also returns
+// the unknown applied versions that allowUnknownVersions let it pass: those at
+// or below target.
+func planDown(
+	known []Migration, history map[int64]record, target int64, opts planOptions,
+) ([]Migration, []int64, error) {
 	if target != 0 && !isKnown(known, target) {
-		return nil, fmt.Errorf("%w: %d", ErrUnknownTarget, target)
+		return nil, nil, fmt.Errorf("%w: %d", ErrUnknownTarget, target)
 	}
 
-	if err := checkHistory(known, history); err != nil {
-		return nil, err
+	unknown, err := checkDownHistory(known, history, target, opts.allowUnknownVersions)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	var (
@@ -119,10 +158,10 @@ func planDown(known []Migration, history map[int64]record, target int64) ([]Migr
 	}
 
 	if len(irreversible) > 0 {
-		return nil, fmt.Errorf("%w: versions %v", ErrIrreversible, irreversible)
+		return nil, nil, fmt.Errorf("%w: versions %v", ErrIrreversible, irreversible)
 	}
 
-	return plan, nil
+	return plan, unknown, nil
 }
 
 func isKnown(known []Migration, version int64) bool {
