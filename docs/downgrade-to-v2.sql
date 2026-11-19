@@ -79,9 +79,9 @@ BEGIN
             USING HINT = 'v2 stores VARCHAR(255) names. Shorten these names first.';
     END IF;
 
-    -- A ledger that v3 created has a primary key on version. One that v3
-    -- upgraded from v2 also has the old unique constraint of v2. Drop both,
-    -- whatever their names are, so that the v2 names are free again.
+    -- A v3 ledger has a primary key on version. One that v3.0 upgraded from
+    -- v2 also has the old unique constraint of v2. Drop both, whatever their
+    -- names are, so that the v2 names are free again.
     FOR old_constraint IN
         SELECT c.conname
         FROM pg_constraint AS c

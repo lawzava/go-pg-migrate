@@ -187,17 +187,31 @@ func (l ledger) ensureSchema(ctx context.Context, tx *sql.Tx) error {
 // upgradeV2 converts the v2 table (id, created_at, number INTEGER, name
 // VARCHAR) in place, keeping every row.
 func (l ledger) upgradeV2(ctx context.Context, tx *sql.Tx) error {
-	statements := []string{
-		`ALTER TABLE ` + l.name + ` RENAME COLUMN number TO version`,
-		`ALTER TABLE ` + l.name + ` RENAME COLUMN created_at TO applied_at`,
-		`ALTER TABLE ` + l.name + `
+	// The unique constraint of v2 on number would only duplicate the new
+	// primary key. It is found by column, because its name follows the table
+	// name.
+	redundant, err := l.uniqueConstraints(ctx, tx, "number")
+	if err != nil {
+		return err
+	}
+
+	var statements []string
+
+	for _, constraint := range redundant {
+		statements = append(statements, `ALTER TABLE `+l.name+` DROP CONSTRAINT `+quoteIdent(constraint))
+	}
+
+	statements = append(statements,
+		`ALTER TABLE `+l.name+` RENAME COLUMN number TO version`,
+		`ALTER TABLE `+l.name+` RENAME COLUMN created_at TO applied_at`,
+		`ALTER TABLE `+l.name+`
 			DROP COLUMN id,
 			ALTER COLUMN version TYPE BIGINT,
 			ALTER COLUMN name TYPE TEXT,
 			ALTER COLUMN applied_at TYPE TIMESTAMPTZ,
 			ADD COLUMN dirty BOOLEAN NOT NULL DEFAULT false`,
-		`ALTER TABLE ` + l.name + ` ADD PRIMARY KEY (version)`,
-	}
+		`ALTER TABLE `+l.name+` ADD PRIMARY KEY (version)`,
+	)
 
 	for _, statement := range statements {
 		if _, err := tx.ExecContext(ctx, statement); err != nil {
@@ -206,6 +220,37 @@ func (l ledger) upgradeV2(ctx context.Context, tx *sql.Tx) error {
 	}
 
 	return nil
+}
+
+// uniqueConstraints names the unique constraints on exactly one column.
+func (l ledger) uniqueConstraints(ctx context.Context, tx *sql.Tx, column string) ([]string, error) {
+	rows, err := tx.QueryContext(ctx,
+		`SELECT c.conname::text FROM pg_constraint AS c
+		JOIN pg_attribute AS a ON a.attrelid = c.conrelid AND a.attname = $2
+		WHERE c.conrelid = to_regclass($1) AND c.contype = 'u' AND c.conkey = ARRAY[a.attnum]
+		ORDER BY c.conname`,
+		l.name, column)
+	if err != nil {
+		return nil, fmt.Errorf("inspect ledger %s: %w", l.name, err)
+	}
+	defer rows.Close()
+
+	var names []string
+
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("inspect ledger %s: %w", l.name, err)
+		}
+
+		names = append(names, name)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("inspect ledger %s: %w", l.name, err)
+	}
+
+	return names, nil
 }
 
 func (l ledger) read(ctx context.Context, db Executor, shape ledgerShape) (map[int64]record, error) {
