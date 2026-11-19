@@ -14,6 +14,8 @@ var (
 	ErrDirty = errors.New("dirty migration")
 
 	// ErrUnknownVersion reports an applied version that has no migration in code.
+	// Set Config.AllowUnknownVersions to leave such versions alone. Down still
+	// returns it for one above its target, which it cannot revert.
 	ErrUnknownVersion = errors.New("applied version has no migration")
 
 	// ErrOutOfOrder reports a pending migration older than the newest applied one.

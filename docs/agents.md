@@ -12,7 +12,9 @@ Migrations use github.com/lawzava/go-pg-migrate/v3. They live in
 Before writing a migration:
 - Run `go run ./cmd/migrate status` against the development database and read
   the JSON. Every version must be `applied` or `pending`. Stop and report a
-  `dirty` or `unknown` version instead of working around it.
+  `dirty` or `unknown` version instead of working around it. Never set
+  `Config.AllowUnknownVersions` to make an `unknown` version pass. It is for
+  services that migrate at boot and may run an older image.
 
 When writing a migration:
 - Append one migration to the end of the slice with the next version number.

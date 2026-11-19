@@ -7,6 +7,11 @@
 // advisory lock serializes concurrent runners, so many replicas can call Up at
 // startup.
 //
+// History is checked before anything runs. An applied version with no migration
+// in code returns ErrUnknownVersion. A service that migrates at startup and may
+// run an older image against a newer ledger can set Config.AllowUnknownVersions
+// to leave such versions alone.
+//
 //	migrations := []migrate.Migration{
 //		{
 //			Version: 1,

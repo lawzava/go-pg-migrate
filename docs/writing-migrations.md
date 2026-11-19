@@ -9,6 +9,15 @@ new application versions overlap during a deploy.
   that has run anywhere outside your machine. The ledger matches by version,
   so an edited migration silently diverges between environments.
 - To undo a shipped change, add a new forward migration.
+- A deleted or renumbered migration leaves its version in every ledger that
+  applied it. `Up` and `Down` then return `ErrUnknownVersion`, and `Status`
+  shows the version as `unknown`.
+- A service that migrates at boot meets the same error when an older image
+  runs against a newer ledger, for example after an image rollback. Set
+  `Config.AllowUnknownVersions` there. `Up` then applies what it knows and
+  leaves the unknown versions alone. `Down` still fails if an unknown version
+  lies above its target, because the code to revert it is missing. To roll
+  back the schema, run `Down` from the image that has those migrations.
 - Pick one versioning scheme per project:
   - Sequential numbers (`1, 2, 3`) are easy to read. Two branches that both add
     version 4 fail `Validate` with a duplicate, so the second branch renumbers

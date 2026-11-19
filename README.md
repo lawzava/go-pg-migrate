@@ -17,7 +17,8 @@ standard library.
   migration runs once.
 - History is checked before anything runs. Unknown applied versions, versions
   added below the applied history, and rollbacks through a migration without
-  `Down` all fail up front.
+  `Down` all fail up front. `Config.AllowUnknownVersions` lets an older image
+  start against a newer ledger.
 - A default 5 s `lock_timeout` makes a blocked `ALTER TABLE` fail instead of
   stalling every query behind it.
 - `NoTx` migrations support `CREATE INDEX CONCURRENTLY`, and an interrupted one
@@ -82,8 +83,25 @@ so a migration can also transform data in Go.
 | `Resolve(ctx, v, applied)` | Clear a dirty version after inspecting the database. |
 
 `Config` sets the ledger location (default `public.migrations`), `LockTimeout`,
-`StatementTimeout`, `AllowOutOfOrder`, and a `*slog.Logger`. The zero value
-works.
+`StatementTimeout`, `AllowOutOfOrder`, `AllowUnknownVersions`, and a
+`*slog.Logger`. The zero value works.
+
+### Migrating at boot
+
+An applied version that the code does not contain returns `ErrUnknownVersion`.
+That stops a service that calls `Up` at startup when it runs an older image
+against a newer ledger, for example after an image rollback. Set
+`Config.AllowUnknownVersions` for such a service. `Up` then applies the pending
+migrations it knows, leaves the unknown rows untouched, and logs them once at
+warn level.
+
+The option does not relax the other checks:
+
+- A dirty version still returns `ErrDirty`.
+- An unknown version still counts as applied history. A pending migration
+  older than it returns `ErrOutOfOrder` unless `AllowOutOfOrder` is also set.
+- `Down` still returns `ErrUnknownVersion` when an unknown version lies above
+  its target, because it has no `Down` to run for it.
 
 ### Connection poolers
 
@@ -115,4 +133,5 @@ func TestMigrations(t *testing.T) {
 ## Upgrading from v2
 
 See [CHANGELOG.md](CHANGELOG.md#upgrading-from-v2). The v2 ledger table is
-upgraded in place on the first v3 run.
+upgraded in place on the first v3 run. To roll back to a v2 image, convert the
+table back with [docs/downgrade-to-v2.sql](docs/downgrade-to-v2.sql).

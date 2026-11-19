@@ -879,3 +879,218 @@ func TestStatusReportsUnreadableLedger(t *testing.T) {
 		}
 	})
 }
+
+// jsonLogger returns a logger that writes to logs, which warnCount reads.
+func jsonLogger(logs *bytes.Buffer) *slog.Logger {
+	return slog.New(slog.NewJSONHandler(logs, nil))
+}
+
+func warnCount(logs *bytes.Buffer) int {
+	return strings.Count(logs.String(), `"level":"WARN"`)
+}
+
+func TestAllowUnknownVersionsUp(t *testing.T) {
+	t.Parallel()
+	eachDriver(t, func(t *testing.T, _, _ string, db *sql.DB) {
+		ctx := t.Context()
+
+		if err := newMigrator(t, db, tables(1, 2), migrate.Config{}).Up(ctx); err != nil {
+			t.Fatal(err)
+		}
+
+		var calls atomic.Int64
+
+		// Version 2 is applied but missing here, as in an older image.
+		older := counting(&calls, []migrate.Migration{
+			table(1),
+			table(3),
+			{
+				Version: 4,
+				Name:    "index",
+				Up:      migrate.SQL("CREATE INDEX CONCURRENTLY t3_id ON t3 (id)"),
+				NoTx:    true,
+			},
+			table(5),
+		})
+
+		wantErr(t, newMigrator(t, db, older, migrate.Config{}).Up(ctx), migrate.ErrUnknownVersion)
+		wantErr(t, newMigrator(t, db, older, migrate.Config{}).UpTo(ctx, 3), migrate.ErrUnknownVersion)
+		check(t, "migration calls by default", calls.Load(), int64(0))
+		check(t, "ledger by default", ledgerVersions(t, db), "1,2")
+
+		var logs bytes.Buffer
+
+		m := newMigrator(t, db, older, migrate.Config{AllowUnknownVersions: true, Logger: jsonLogger(&logs)})
+
+		if err := m.UpTo(ctx, 3); err != nil {
+			t.Fatalf("UpTo: %v", err)
+		}
+
+		check(t, "ledger after UpTo", ledgerVersions(t, db), "1,2,3")
+		check(t, "warnings after UpTo", warnCount(&logs), 1)
+
+		// Three steps, one of them NoTx, plan five times in total.
+		logs.Reset()
+
+		if err := m.Up(ctx); err != nil {
+			t.Fatalf("Up: %v", err)
+		}
+
+		check(t, "ledger after Up", ledgerVersions(t, db), "1,2,3,4,5")
+		check(t, "unknown row kept", queryString(t, db, "SELECT name FROM public.migrations WHERE version = 2"), "create t2")
+		check(t, "tables", userTables(t, db), "public.migrations,public.t1,public.t2,public.t3,public.t5")
+		check(t, "migration calls", calls.Load(), int64(3))
+		check(t, "warnings after Up", warnCount(&logs), 1)
+
+		if !strings.Contains(logs.String(), `"versions":[2]`) {
+			t.Errorf("warning does not list the unknown versions:\n%s", logs.String())
+		}
+
+		// Nothing is unknown to the full list, so the option stays silent.
+		logs.Reset()
+
+		full := append(tables(1, 2), older[1:]...)
+		if err := newMigrator(t, db, full, migrate.Config{AllowUnknownVersions: true, Logger: jsonLogger(&logs)}).Up(ctx); err != nil {
+			t.Fatal(err)
+		}
+
+		check(t, "warnings without unknown versions", warnCount(&logs), 0)
+	})
+}
+
+func TestAllowUnknownVersionsDirtyAndResolve(t *testing.T) {
+	t.Parallel()
+	eachDriver(t, func(t *testing.T, _, _ string, db *sql.DB) {
+		ctx := t.Context()
+
+		if err := newMigrator(t, db, tables(1, 2), migrate.Config{}).Up(ctx); err != nil {
+			t.Fatal(err)
+		}
+
+		exec(t, db, "UPDATE public.migrations SET dirty = true WHERE version = 2")
+
+		var calls atomic.Int64
+
+		// Version 2 is dirty and unknown to this code.
+		m := newMigrator(t, db, counting(&calls, tables(1, 3)), migrate.Config{AllowUnknownVersions: true})
+
+		wantErr(t, m.Up(ctx), migrate.ErrDirty)
+		wantErr(t, m.UpTo(ctx, 3), migrate.ErrDirty)
+		wantErr(t, m.Down(ctx, 0), migrate.ErrDirty)
+		check(t, "migration calls", calls.Load(), int64(0))
+
+		if err := m.Resolve(ctx, 2, true); err != nil {
+			t.Fatal(err)
+		}
+
+		check(t, "ledger after Resolve(applied=true)", ledgerVersions(t, db), "1,2")
+		check(t, "dirty rows", queryString(t, db, "SELECT count(*)::text FROM public.migrations WHERE dirty"), "0")
+		wantErr(t, m.Resolve(ctx, 2, false), migrate.ErrNotDirty)
+
+		exec(t, db, "UPDATE public.migrations SET dirty = true WHERE version = 2")
+
+		if err := m.Resolve(ctx, 2, false); err != nil {
+			t.Fatal(err)
+		}
+
+		check(t, "ledger after Resolve(applied=false)", ledgerVersions(t, db), "1")
+	})
+}
+
+func TestAllowUnknownVersionsKeepsOrderCheck(t *testing.T) {
+	t.Parallel()
+	eachDriver(t, func(t *testing.T, _, _ string, db *sql.DB) {
+		ctx := t.Context()
+
+		if err := newMigrator(t, db, tables(1, 5), migrate.Config{}).Up(ctx); err != nil {
+			t.Fatal(err)
+		}
+
+		var calls atomic.Int64
+
+		// Version 5 is unknown and newer than pending version 3.
+		code := counting(&calls, tables(1, 3))
+
+		err := newMigrator(t, db, code, migrate.Config{AllowUnknownVersions: true}).Up(ctx)
+		wantErr(t, err, migrate.ErrOutOfOrder)
+		wantErr(t, newMigrator(t, db, code, migrate.Config{AllowOutOfOrder: true}).Up(ctx), migrate.ErrUnknownVersion)
+		check(t, "migration calls", calls.Load(), int64(0))
+		check(t, "ledger", ledgerVersions(t, db), "1,5")
+
+		both := migrate.Config{AllowUnknownVersions: true, AllowOutOfOrder: true}
+		if err := newMigrator(t, db, code, both).Up(ctx); err != nil {
+			t.Fatal(err)
+		}
+
+		check(t, "ledger with both options", ledgerVersions(t, db), "1,3,5")
+	})
+}
+
+func TestAllowUnknownVersionsDown(t *testing.T) {
+	t.Parallel()
+	eachDriver(t, func(t *testing.T, _, _ string, db *sql.DB) {
+		ctx := t.Context()
+
+		if err := newMigrator(t, db, tables(1, 2, 3, 4, 5), migrate.Config{}).Up(ctx); err != nil {
+			t.Fatal(err)
+		}
+
+		const allTables = "public.migrations,public.t1,public.t2,public.t3,public.t4,public.t5"
+
+		var logs bytes.Buffer
+
+		config := migrate.Config{AllowUnknownVersions: true, Logger: jsonLogger(&logs)}
+
+		// Versions 2 and 3 are unknown to this code.
+		m := newMigrator(t, db, tables(1, 4, 5), config)
+
+		wantErr(t, newMigrator(t, db, tables(1, 4, 5), migrate.Config{}).Down(ctx, 4), migrate.ErrUnknownVersion)
+
+		for _, target := range []int64{0, 1} {
+			err := m.Down(ctx, target)
+			wantErr(t, err, migrate.ErrUnknownVersion)
+
+			want := fmt.Sprintf("versions [2 3] are above target %d and cannot be reverted", target)
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("Down(%d) err = %v, want it to contain %q", target, err, want)
+			}
+		}
+
+		check(t, "ledger after refused Down", ledgerVersions(t, db), "1,2,3,4,5")
+		check(t, "tables after refused Down", userTables(t, db), allTables)
+		check(t, "warnings after refused Down", warnCount(&logs), 0)
+
+		// Every unknown version is at or below target 4.
+		if err := m.Down(ctx, 4); err != nil {
+			t.Fatalf("Down(4): %v", err)
+		}
+
+		check(t, "ledger after Down(4)", ledgerVersions(t, db), "1,2,3,4")
+		check(t, "tables after Down(4)", userTables(t, db), "public.migrations,public.t1,public.t2,public.t3,public.t4")
+		check(t, "warnings after Down(4)", warnCount(&logs), 1)
+
+		// Nothing is left to revert, but the call still passes unknown versions.
+		if err := m.Down(ctx, 4); err != nil {
+			t.Fatalf("Down(4) again: %v", err)
+		}
+
+		check(t, "ledger after Down(4) again", ledgerVersions(t, db), "1,2,3,4")
+		check(t, "warnings after Down(4) again", warnCount(&logs), 2)
+	})
+}
+
+func TestAllowUnknownVersionsBaseline(t *testing.T) {
+	t.Parallel()
+	eachDriver(t, func(t *testing.T, _, _ string, db *sql.DB) {
+		ctx := t.Context()
+
+		if err := newMigrator(t, db, tables(2), migrate.Config{}).Up(ctx); err != nil {
+			t.Fatal(err)
+		}
+
+		m := newMigrator(t, db, tables(1, 3), migrate.Config{AllowUnknownVersions: true})
+
+		wantErr(t, m.Baseline(ctx, 3), migrate.ErrLedgerNotEmpty)
+		check(t, "ledger", ledgerVersions(t, db), "2")
+	})
+}
