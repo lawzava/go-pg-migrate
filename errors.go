@@ -37,6 +37,7 @@ var (
 	// ErrNotDirty reports a Resolve call for a version that is not dirty.
 	ErrNotDirty = errors.New("version is not dirty")
 
-	// ErrLockTimeout reports a statement that exceeded Config.LockTimeout.
+	// ErrLockTimeout reports a statement, in a migration or on the ledger,
+	// that exceeded Config.LockTimeout.
 	ErrLockTimeout = errors.New("lock timeout")
 )
